@@ -1,0 +1,12 @@
+time_period_id,day_type,time_period,period_start_time,period_end_time
+time_period_01,weekday,VERY_EARLY_MORNING,3:00:00,05:59:59
+time_period_02,weekday,EARLY_AM,6:00:00,06:59:59
+time_period_03,weekday,AM_PEAK,7:00:00,08:59:59
+time_period_04,weekday,MIDDAY_BASE,9:00:00,13:29:59
+time_period_05,weekday,MIDDAY_SCHOOL,13:30:00,15:59:59
+time_period_06,weekday,PM_PEAK,16:00:00,18:29:59
+time_period_07,weekday,EVENING,18:30:00,21:59:59
+time_period_08,weekday,LATE_EVENING,22:00:00,23:59:59
+time_period_09,weekday,NIGHT,24:00:00,02:59:59
+time_period_10,saturday,OFF_PEAK,3:00:00,02:59:59
+time_period_11,sunday,OFF_PEAK,3:00:00,02:59:59

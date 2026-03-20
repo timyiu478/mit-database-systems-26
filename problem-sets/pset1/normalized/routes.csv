@@ -1,0 +1,19 @@
+route_id,line_id,first_station_id,last_station_id,direction,direction_desc,route_name
+0,blue,place-wondl,place-bomnl,0,West,Wonderland to Bowdoin
+1,blue,place-bomnl,place-wondl,1,East,Bowdoin to Wonderland
+2,green,place-gover,place-lake,0,West,(B) Government Center to Boston College
+3,green,place-gover,place-clmnl,0,West,(C) Government Center to Cleveland Circle
+4,green,place-north,place-river,0,West,(D) North Station to Riverside
+5,green,place-lech,place-hsmnl,0,West,(E) Lechmere to Heath Street
+6,green,place-lake,place-gover,1,East,(B) Boston College to Government Center
+7,green,place-clmnl,place-gover,1,East,(C) Cleveland Circle to Government Center
+8,green,place-river,place-north,1,East,(D) Riverside to North Station
+9,green,place-hsmnl,place-lech,1,East,(E) Heath Street to Lechmere
+10,mattapan,place-asmnl,place-matt,0,Outbound,Ashmont to Mattapan
+11,mattapan,place-matt,place-asmnl,1,Inbound,Mattapan to Ashmont
+12,orange,place-ogmnl,place-forhl,0,South,Oak Grove to Forest Hills
+13,orange,place-forhl,place-ogmnl,1,North,Forest Hills to Oak Grove
+14,red,place-alfcl,place-asmnl,0,South,Alewife to Ashmont
+15,red,place-alfcl,place-brntn,0,South,Alewife to Braintree
+16,red,place-asmnl,place-alfcl,1,North,Ashmont to Alewife
+17,red,place-brntn,place-alfcl,1,North,Braintree to Alewife
