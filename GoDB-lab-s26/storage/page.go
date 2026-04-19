@@ -29,6 +29,11 @@ type PageFrame struct {
 	startHint      int
 	allocBitmap    Bitmap
 	deletedBitmap  Bitmap
+	// buffer pool metadata
+	pageId   common.PageID
+	refCount atomic.Int64
+	isDirty  atomic.Bool
+	inOld    bool
 }
 
 // Detect system endianness -- compiler should statically replace this with a constant
