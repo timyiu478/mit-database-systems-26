@@ -9,9 +9,10 @@ A course about the foundations of database systems, focusing on basics such as t
 
 My completed projects at a glance:
 
-1. [Bitmap, Heap Page, Buffer Pool Manager, and Table Heap](lab-writeups/lab_1.md)
+1. [Storage & Buffer Management](lab-writeups/lab_1.md)
 
 # Readings
 
 My paper writeups at a glance:
+
 
