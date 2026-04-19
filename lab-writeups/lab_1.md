@@ -66,6 +66,9 @@ In GetPage(), the first step is to acquire the page lock for the requested PageI
 When selecting a victim for eviction, we not only choose a frame with refCount == 0, but also attempt to acquire its lock. The victim’s latch is released only after its dirty data has been successfully flushed to disk (if it was dirty).
 As a result, if another thread requests a page that is currently being used as a victim (while its dirty data is still being written to disk), that thread will block on the page lock until the flush completes.
 
+### Table Heap
+
+
 
 ## Implementation Challenges
 
@@ -85,6 +88,8 @@ Many requirements have to fulfil:
 * Resistant to cache pollution from sequential scans
 * Fixed pool size
 * Ensure the invariant that there is a strict 1-to-1 relationship between a page ID and its corresponding page frame in the buffer pool
+
+### Table Heap
 
 ## Mistakes I made
 
@@ -125,6 +130,10 @@ func (bp *BufferPool) UnpinPage(frame *PageFrame, setDirty bool) {
 	frame.refCount.Add(-1)
 }
 ```
+
+### Table Heap
+
+
 
 ## Key Takeaways
 
