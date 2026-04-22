@@ -154,3 +154,4 @@ How I found the bug:
 
 * High-performance scans by checking 64 bits at a time using standard CPU word operations
 * The Buffer Pool eviction policy (2Q) that is resistant to cache pollution from sequential scans
+* Heap page is a thin interpretor over a page frame that exposes the page's logical content or layout
