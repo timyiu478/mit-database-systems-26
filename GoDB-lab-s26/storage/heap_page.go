@@ -95,9 +95,6 @@ func InitializeHeapPage(desc *RawTupleDesc, frame *PageFrame) {
 		numSlotsPtr := (*uint16)(unsafe.Pointer(&frame.Bytes[PageOffsetNumSlots]))
 		*numSlotsPtr = uint16(numSlots)
 
-		// Set magic number
-		*paddingPtr = HeapPageMagic
-
 		// Cache frequently access fields e.g. bitmaps, numSlots and calculate offsets
 		buf := frame.Bytes[:] // convert array to slice once
 
@@ -121,6 +118,9 @@ func InitializeHeapPage(desc *RawTupleDesc, frame *PageFrame) {
 
 		frame.allocBitmap = AsBitmap(buf[HeaderSize:HeaderSize+bitmapBytes], frame.numSlots)
 		frame.deletedBitmap = AsBitmap(buf[deletedOffset:deletedOffset+bitmapBytes], frame.numSlots)
+
+		// Set magic number
+		*paddingPtr = HeapPageMagic
 }
 
 // Assume InitializeHeapPage() is called before the call of AsHeapPage()
