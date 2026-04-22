@@ -22,7 +22,6 @@ type BufferPoolShard struct {
 
 	youngList      *list.List
 	oldList        *list.List
-
 }
 
 // BufferPool manages the reading and writing of database pages between the DiskFileManager and memory.
@@ -163,6 +162,7 @@ func (bp *BufferPool) GetPage(pageID common.PageID) (*PageFrame, error) {
 		shard.rollbackEviction(newPage)
 		return nil, err
 	}
+
 	if err := dbFile.ReadPage(int(pageID.PageNum), newPage.Bytes[:]); err != nil {
 		shard.rollbackEviction(newPage)
 		return nil, err
@@ -319,7 +319,6 @@ func (bps *BufferPoolShard) evictPage() *PageFrame {
 	if evictE == nil || victim == nil {
 		return nil
 	}
-
 
 	bps.pages.Delete(victim.pageId.String())
 
