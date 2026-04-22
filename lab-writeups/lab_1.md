@@ -88,7 +88,7 @@ To initialize a heap page, we must calculate the maximum number of rows (slots) 
 
 ### Buffer Pool
 
-Many requirements have to fulfil:
+Many requirements have to be fulfilled:
 
 * Thread-safe
 * IO concurrency
@@ -142,7 +142,7 @@ func (bp *BufferPool) UnpinPage(frame *PageFrame, setDirty bool) {
 
 ### Table Heap
 
-In DeleteTuple and UpdateTuple I return in the ErrTupleDeleted branch without unpinning the page.
+In DeleteTuple and UpdateTuple, I return in the ErrTupleDeleted branch without unpinning the page.
 
 How I found the bug:
 
@@ -154,4 +154,4 @@ How I found the bug:
 
 * High-performance scans by checking 64 bits at a time using standard CPU word operations
 * The Buffer Pool eviction policy (2Q) that is resistant to cache pollution from sequential scans
-* Heap page is a thin interpretor over a page frame that exposes the page's logical content or layout
+* Heap page is a thin interpreter over a page frame that exposes the page's logical content or layout
