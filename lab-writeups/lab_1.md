@@ -7,6 +7,7 @@ See [GoDB-lab-26/lab1.md](GoDB-lab-26/lab1.md)
 ## Test Results
 
 * Buffer Pool: https://drive.google.com/file/d/1QXOrQVGpp2UyBpY2DJ7U9dnXr81FqLdf/view
+* Table Heap: https://drive.google.com/file/d/1AU_c5HaCp4CmGXN2hRLATLpJ_RfuDKhB/view
 
 ## Related Source Code
 
@@ -68,7 +69,11 @@ As a result, if another thread requests a page that is currently being used as a
 
 ### Table Heap
 
+The InsertTuple function is the only code path that allocates and initializes new physical pages. Page-allocation and the decision logic for how many pages to create are protected by a dedicated mutex, preventing over-allocation.
 
+Initialized pages contain a magic value at a fixed header offset; checking that offset tells us whether a page frame is initialized. The table-heap iterator relies on this to wait for a newly allocated page to be initialized, assuming the allocator will initialize it quickly:
+
+The iterator takes a read latch on a page frame immediately after acquiring it and holds that latch until Next() advances to the following page. This design assumes the iterator caller will scan rows quickly.
 
 ## Implementation Challenges
 
@@ -90,6 +95,8 @@ Many requirements have to fulfil:
 * Ensure the invariant that there is a strict 1-to-1 relationship between a page ID and its corresponding page frame in the buffer pool
 
 ### Table Heap
+
+Thread-safe heap page initialization, page allocation, and tuple access.
 
 ## Mistakes I made
 
@@ -133,7 +140,13 @@ func (bp *BufferPool) UnpinPage(frame *PageFrame, setDirty bool) {
 
 ### Table Heap
 
+In DeleteTuple and UpdateTuple I return in the ErrTupleDeleted branch without unpinning the page.
 
+How I found the bug:
+
+1. Discovered the actors in TestTableHeap_ConcurrentMixedWorkload were stuck because the buffer pool was full and could not find a page frame to evict.
+1. Identified that no page frame had a zero pin count, which prevented eviction.
+1. Observed that the pin counts of the page frames kept growing.
 
 ## Key Takeaways
 
