@@ -16,6 +16,8 @@ const (
   PageOffsetPadding = 14
 	// header size
 	HeaderSize = 16
+	// Magic number
+  HeapPageMagic = uint16(0x8888)
 )
 
 // HeapPage Layout:
@@ -26,16 +28,10 @@ type HeapPage struct {
 }
 
 func (hp HeapPage) NumUsed() int {
-	hp.PageFrame.PageLatch.RLock()
-	defer hp.PageFrame.PageLatch.RUnlock()
-
 	return hp.PageFrame.numUsed
 }
 
 func (hp HeapPage) SetNumUsed(numUsed int) {
-	hp.PageFrame.PageLatch.Lock()
-	defer hp.PageFrame.PageLatch.Unlock()
-
 	ptr := (*uint16)(unsafe.Pointer(&hp.PageFrame.Bytes[PageOffsetNumUsed]))
 	*ptr = uint16(numUsed)
 
@@ -50,7 +46,18 @@ func (hp HeapPage) RowSize() int {
 	return hp.PageFrame.rowSize
 }
 
+func IsInitializedHeapPage(frame *PageFrame) bool {
+	paddingPtr := (*uint16)(unsafe.Pointer(&frame.Bytes[PageOffsetPadding]))
+	return *paddingPtr == HeapPageMagic
+}
+
 func InitializeHeapPage(desc *RawTupleDesc, frame *PageFrame) {
+		// Check if the heap page is initialized
+		paddingPtr := (*uint16)(unsafe.Pointer(&frame.Bytes[PageOffsetPadding]))
+		if *paddingPtr == HeapPageMagic {
+			return
+		}
+
 		// clear frame Bytes
 	  for i := range frame.Bytes {
       frame.Bytes[i] = 0
@@ -88,49 +95,43 @@ func InitializeHeapPage(desc *RawTupleDesc, frame *PageFrame) {
 		numSlotsPtr := (*uint16)(unsafe.Pointer(&frame.Bytes[PageOffsetNumSlots]))
 		*numSlotsPtr = uint16(numSlots)
 
+		// Set magic number
+		*paddingPtr = HeapPageMagic
+
+		// Cache frequently access fields e.g. bitmaps, numSlots and calculate offsets
+		buf := frame.Bytes[:] // convert array to slice once
+
+		frame.rowSize = int(binary.LittleEndian.Uint16(buf[PageOffsetRowSize:]))
+		frame.numSlots = int(binary.LittleEndian.Uint16(buf[PageOffsetNumSlots:]))
+		frame.numUsed = int(binary.LittleEndian.Uint16(buf[PageOffsetNumUsed:]))
+
+		bitmapBytes := (numSlots + 63) / 64 * 8
+		deletedOffset := HeaderSize + bitmapBytes
+		// alignment padding
+		padding := 0
+		if deletedOffset%8 != 0 {
+				padding = 8 - (deletedOffset % 8)
+		}
+		deletedOffset += padding
+
+		frame.bitMapSize = bitmapBytes
+		frame.padding = padding
+		frame.dataStart = deletedOffset + bitmapBytes
+		frame.startHint = 0
+
+		frame.allocBitmap = AsBitmap(buf[HeaderSize:HeaderSize+bitmapBytes], frame.numSlots)
+		frame.deletedBitmap = AsBitmap(buf[deletedOffset:deletedOffset+bitmapBytes], frame.numSlots)
 }
 
 // Assume InitializeHeapPage() is called before the call of AsHeapPage()
 func (frame *PageFrame) AsHeapPage() HeapPage {
-	frame.PageLatch.Lock()
-	defer frame.PageLatch.Unlock()
-
-	hp := HeapPage{}
-
-	hp.PageFrame = frame
-
-	buf := frame.Bytes[:] // convert array to slice once
-
-	hp.PageFrame.rowSize = int(binary.LittleEndian.Uint16(buf[PageOffsetRowSize:]))
-	hp.PageFrame.numSlots = int(binary.LittleEndian.Uint16(buf[PageOffsetNumSlots:]))
-	hp.PageFrame.numUsed = int(binary.LittleEndian.Uint16(buf[PageOffsetNumUsed:]))
-
-	bitmapBytes := (hp.numSlots + 63) / 64 * 8
-	deletedOffset := HeaderSize + bitmapBytes
-	// alignment padding
-	padding := 0
-	if deletedOffset%8 != 0 {
-			padding = 8 - (deletedOffset % 8)
-	}
-	deletedOffset += padding
-
-	hp.PageFrame.bitMapSize = bitmapBytes
-	hp.PageFrame.padding = padding
-	hp.PageFrame.dataStart = deletedOffset + bitmapBytes
-	hp.PageFrame.startHint = 0
-
-	hp.PageFrame.allocBitmap = AsBitmap(buf[HeaderSize:HeaderSize+bitmapBytes], hp.PageFrame.numSlots)
-	hp.PageFrame.deletedBitmap = AsBitmap(buf[deletedOffset:deletedOffset+bitmapBytes], hp.PageFrame.numSlots)
-
+	hp := HeapPage{frame}
 	return hp
 }
 
 // Strict free slot
 // Deleted slots (alloc=1, deleted=1) are not considered immediately free.
 func (hp HeapPage) FindFreeSlot() int {
-	hp.PageFrame.PageLatch.Lock()
-	defer hp.PageFrame.PageLatch.Unlock()
-
 	i := hp.PageFrame.allocBitmap.FindFirstZero(hp.PageFrame.startHint)
 	hp.PageFrame.startHint = (i + 1) % hp.PageFrame.numSlots
 	return i
@@ -138,16 +139,10 @@ func (hp HeapPage) FindFreeSlot() int {
 
 // IsAllocated checks the allocation bitmap to see if a slot is valid.
 func (hp HeapPage) IsAllocated(rid common.RecordID) bool {
-	hp.PageFrame.PageLatch.RLock()
-	defer hp.PageFrame.PageLatch.RUnlock()
-
 	return hp.PageFrame.allocBitmap.LoadBit(int(rid.Slot))
 }
 
 func (hp HeapPage) MarkAllocated(rid common.RecordID, allocated bool) {
-	hp.PageFrame.PageLatch.Lock()
-	defer hp.PageFrame.PageLatch.Unlock()
-
 	hp.PageFrame.allocBitmap.SetBit(int(rid.Slot), allocated)
 
 	// Update Alloc Bitmap in header
@@ -180,16 +175,10 @@ func (hp HeapPage) MarkAllocated(rid common.RecordID, allocated bool) {
 }
 
 func (hp HeapPage) IsDeleted(rid common.RecordID) bool {
-	hp.PageFrame.PageLatch.RLock()
-	defer hp.PageFrame.PageLatch.RUnlock()
-
 	return hp.PageFrame.deletedBitmap.LoadBit(int(rid.Slot))
 }
 
 func (hp HeapPage) MarkDeleted(rid common.RecordID, deleted bool) {
-	hp.PageFrame.PageLatch.Lock()
-	defer hp.PageFrame.PageLatch.Unlock()
-
 	hp.PageFrame.deletedBitmap.SetBit(int(rid.Slot), deleted)
 
 	wordIdx := int(rid.Slot / 64)
@@ -200,9 +189,6 @@ func (hp HeapPage) MarkDeleted(rid common.RecordID, deleted bool) {
 }
 
 func (hp HeapPage) AccessTuple(rid common.RecordID) RawTuple {
-	hp.PageFrame.PageLatch.RLock()
-	defer hp.PageFrame.PageLatch.RUnlock()
-
 	start := hp.PageFrame.dataStart + (int(rid.Slot)*hp.PageFrame.rowSize)
 	end := start + hp.PageFrame.rowSize
 
