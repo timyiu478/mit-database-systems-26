@@ -2,7 +2,7 @@
 
 ## Lab details
 
-See [GoDB-lab-26/lab1.md](GoDB-lab-26/lab1.md)
+See [../GoDB-lab-26/lab1.md](../GoDB-lab-26/lab1.md)
 
 ## Test Results
 
