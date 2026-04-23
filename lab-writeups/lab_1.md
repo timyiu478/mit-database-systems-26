@@ -43,7 +43,7 @@ A simple benchmark confirms that the word-skipping approach indeed outperforms t
 ![](assets/buffer_pool_overall_design.png)
 
 To avoid a single global lock, the buffer pool is partitioned into shards (1 to 64 shards). Each page request is routed to a shard based on the hash of its PageID. This enables better concurrency by allowing different shards to be accessed in parallel.
-However, this approach can lead to storage skew, where some shards hold significantly more pages than others.
+However, this approach can lead to storage skew, where some shards hold 1 more page than others.
 
 Each shard manages its page frames using three data structures: a hash map and two linked lists.
 The two linked lists implement the [2Q eviction policy (also known as Two-Queue replacement)](https://faculty.cc.gatech.edu/~jarulraj/courses/6422-O-s25/slides/08-two-q-policy.pdf), which helps resist cache pollution caused by sequential scans. The hash map serves as a page table, providing O(1) lookup of the corresponding linked list element for any given page.
