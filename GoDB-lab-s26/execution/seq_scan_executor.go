@@ -33,7 +33,7 @@ func (e *SeqScanExecutor) Init(context *ExecutorContext) error {
 		return err
 	}
 	e.it = &it
-	e.buf = make([]byte, e.tableHeap.desc.BytesPerTuple())
+	e.buf = make([]byte, e.tableHeap.StorageSchema().BytesPerTuple())
 	return nil
 }
 
