@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -29,6 +30,13 @@ type TransactionManager struct {
 	nextTxnID atomic.Uint64
 	// Pool to recycle transaction contexts
 	txnPool sync.Pool
+
+	// snapshotMu guards the ATT snapshot invariant.
+	// Commits/Aborts hold RLock across [Append(CommitRecord/AbortRecord) … Delete(tid)].
+	// GetActiveTransactionsSnapshot holds Lock for the entire Range() call.
+	// This ensures no transaction can have its Commit record at LSN < checkpointLSN
+	// while still appearing in the snapshot (un-deleted from activeTxns).
+	snapshotMu sync.RWMutex
 }
 
 // NewTransactionManager initializes the transaction manager.
@@ -60,6 +68,7 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 		cleanupTask.Target.Invoke(cleanupTask.Type, cleanupTask.Key, cleanupTask.RID)
 	}
 
+	fmt.Printf("Aborting transaction %d\n", txn.ID())
 	// Add your implementation here
 	return nil
 }
