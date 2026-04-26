@@ -17,4 +17,4 @@ My completed projects at a glance:
 
 My paper writeups at a glance:
 
-
+1. [Chapter 2. B-Tree Basics in Database Internal by Alex Petrov](readings/notes/b_tree_basic.md)
