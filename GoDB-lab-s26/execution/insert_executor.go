@@ -12,33 +12,55 @@ import (
 //
 // For this course, you may assume that the child does not read from the table you are inserting into
 type InsertExecutor struct {
-	// Fill me in!
+	child      Executor
+	plan       *planner.InsertNode
+	tableHeap  *TableHeap
+	ctx        *ExecutorContext
+	indexes    []indexing.Index
 }
 
 func NewInsertExecutor(plan *planner.InsertNode, child Executor, tableHeap *TableHeap, indexes []indexing.Index) *InsertExecutor {
-	panic("unimplemented")
+	e := &InsertExecutor{
+		child: child,
+		plan: plan,
+		tableHeap: tableHeap,
+		indexes: indexes,
+	}
+
+	return e
 }
 
 func (e *InsertExecutor) PlanNode() planner.PlanNode {
-	panic("unimplemented")
+	return e.plan
 }
 
 func (e *InsertExecutor) Init(ctx *ExecutorContext) error {
-	panic("unimplemented")
+	e.ctx = ctx
+	return e.child.Init(ctx)
 }
 
 func (e *InsertExecutor) Next() bool {
-	panic("unimplemented")
+	ret := e.child.Next()
+	if !ret {
+		return false
+	}
+	row := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
+	e.child.Current().WriteToBuffer(row, e.tableHeap.StorageSchema())
+	_, err := e.tableHeap.InsertTuple(e.ctx.txn, row)
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func (e *InsertExecutor) Current() storage.Tuple {
-	panic("unimplemented")
+	return e.child.Current()
 }
 
 func (e *InsertExecutor) Close() error {
-	panic("unimplemented")
+	return e.child.Close()
 }
 
 func (e *InsertExecutor) Error() error {
-	panic("unimplemented")
+	return e.child.Error()
 }
