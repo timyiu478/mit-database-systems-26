@@ -6,6 +6,9 @@ See [../GoDB-lab-s26/lab2.md](../GoDB-lab-s26/lab2.md)
 
 ## Test Results
 
+* Sequential Scan, Filter, Projection, and Limit Executors: https://drive.google.com/file/d/1izQUZsfCWIFb8RbpNjElpGywfW5wBSrJ/view?usp=drive_link
+* Index and Index Scan Executors: https://drive.google.com/file/d/149IyE786tChJREHFUJhjixOapA_rj0DF/view?usp=drive_link
+* Insert, Delete, and Update Executors: https://drive.google.com/file/d/1HSA5VosKSPbXOvooXG-GHO7SMUe95lzq/view?usp=drive_link
 
 ## Related Source Code
 
