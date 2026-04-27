@@ -4,39 +4,77 @@ import (
 	"mit.edu/dsg/godb/indexing"
 	"mit.edu/dsg/godb/planner"
 	"mit.edu/dsg/godb/storage"
+	"mit.edu/dsg/godb/common"
 )
 
 // IndexLookupExecutor implements a Point Lookup using an index. Unlike a full Index Scan, which iterates over a
 // range of keys, this executor efficiently retrieves only the tuples that match a specific equality key
 // (e.g., "SELECT * FROM users WHERE id = 5").
 type IndexLookupExecutor struct {
-	// Fill me in!
+	plan      *planner.IndexLookupNode
+	tableHeap *TableHeap
+	ctx       *ExecutorContext
+	index     indexing.Index
+	rids      []common.RecordID
+	err       error
+	tuple     storage.Tuple
+	scanned   bool
+	cursor    int
 }
 
 func NewIndexLookupExecutor(plan *planner.IndexLookupNode, index indexing.Index, tableHeap *TableHeap) *IndexLookupExecutor {
-	panic("unimplemented")
+	e := &IndexLookupExecutor{
+		plan: plan,
+		tableHeap: tableHeap,
+		index: index,
+		scanned: false,
+		cursor: 0,
+	}
+
+	return e
 }
 
 func (e *IndexLookupExecutor) PlanNode() planner.PlanNode {
-	panic("unimplemented")
+	return e.plan
 }
 
 func (e *IndexLookupExecutor) Init(ctx *ExecutorContext) error {
-	panic("unimplemented")
+	e.ctx = ctx
+
+	return nil
 }
 
 func (e *IndexLookupExecutor) Next() bool {
-	panic("unimplemented")
+	if e.err != nil || e.scanned && e.cursor >= len(e.rids) {
+		return false
+	}
+
+	if !e.scanned {
+		e.rids, e.err = e.index.ScanKey(e.plan.EqualityKey, e.rids, e.ctx.txn)
+		if e.err != nil || len(e.rids) == 0 {
+			return false
+		}
+		e.scanned = true
+	}
+
+	rid := e.rids[e.cursor]
+	buf := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
+	e.tableHeap.ReadTuple(e.ctx.txn, rid, buf, e.plan.ForUpdate)
+	e.tuple = storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
+
+	e.cursor++
+
+	return true
 }
 
 func (e *IndexLookupExecutor) Current() storage.Tuple {
-	panic("unimplemented")
+	return e.tuple
 }
 
 func (e *IndexLookupExecutor) Close() error {
-	panic("unimplemented")
+	return nil
 }
 
 func (e *IndexLookupExecutor) Error() error {
-	panic("unimplemented")
+	return e.err
 }
