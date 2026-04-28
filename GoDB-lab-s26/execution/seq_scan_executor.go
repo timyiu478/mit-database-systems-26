@@ -50,5 +50,5 @@ func (e *SeqScanExecutor) Error() error {
 }
 
 func (e *SeqScanExecutor) Close() error {
-	return e.Close()
+	return e.it.Close()
 }
