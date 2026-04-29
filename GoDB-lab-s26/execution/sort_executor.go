@@ -10,6 +10,7 @@ import (
 type TupleWithOrdKey struct {
 	tuple storage.Tuple
 	keys []common.Value
+	directions []planner.SortDirection
 }
 
 // SortExecutor sorts the input tuples based on the provided ordering expressions.
