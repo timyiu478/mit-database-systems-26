@@ -11,18 +11,19 @@ See [../GoDB-lab-s26/lab2.md](../GoDB-lab-s26/lab2.md)
 * Insert, Delete, and Update Executors: https://drive.google.com/file/d/1HSA5VosKSPbXOvooXG-GHO7SMUe95lzq/view?usp=drive_link
 * Block Nested Loop Join Executor: https://drive.google.com/file/d/1o88dswzepsdjJA-O7stxoRwJTrvOHXln/view?usp=drive_link
 * Sort Executor: https://drive.google.com/file/d/1XA56S5x44cRsFn6PYxciizQ5Or_FguRF/view?usp=drive_link
-* Aggregate Executor: 
+* Aggregate Executor: https://drive.google.com/file/d/1EmbwN7UChtIVYVWnK0Jdl47kVLRtXZER/view?usp=drive_link
+* Hash Executor: https://drive.google.com/file/d/1eke0IKjkpe1c0WuFmuZZ26hSsCNEkVv6/view?usp=sharing
+* TopN Optimization Executor: https://drive.google.com/file/d/1KYs2uAH9pAWtnf6KwjosnYIC2TYcq_sD/view?usp=sharing
 
 ## Related Source Code
 
-
+https://github.com/timyiu478/mit-database-systems/pull/2/changes
 
 ## Design Choices
 
-### Block Nested Loop Join
+### Block Nested Loop Join Executor
 
 ![](assets/join_executor_buffer.png)
-
 
 The join buffer is implemented as a slice of [storage.Tuple](https://github.com/MIT-DB-Class/GoDB-lab-s26/blob/main/storage/tuple.go#L97-L111), with its capacity constrained by maxTuplesInBlock. Each storage.Tuple acts as a container that holds a pointer to its **materialized** raw tuple data, which conforms to a specific RawTupleDesc.
 
@@ -115,6 +116,9 @@ sortFunc := func(a, b TupleWithOrdKey) int {
 slices.SortFunc(e.tuples, sortFunc)
 ```
 
+### Top-N Optimization
+
+To keep the "Best" values in a **Max**-Heap, Less(i, j) should return true if i is greater than j.
 
 ## Implementation Challenges
 
@@ -123,6 +127,21 @@ slices.SortFunc(e.tuples, sortFunc)
 * How to implement the BNLJ algorithm in iterator model
 * Edge Cases: Left/Right table is empty
 
+## Implementation Tips
+
+### Aggregation Executor
+
+Based on test cases, the Aggregate Executor should return a tuple where the schema is:
+
+[Group By Key 1, Group By Key 2, ..., Aggregation 1, Aggregation 2, ...]
+
+If there are no group-by keys (a global aggregate), the tuple contains only the aggregation results.
+
+The "Ignore" Rule:
+
+* Standard aggregate functions—like SUM(), AVG(), MIN(), MAX(), and COUNT(column)—simply skip over NULL entries as if they don't exist. They do not treat them as zero; they treat them as "missing."
+* The Exception: COUNT(*) is the only aggregate that does not ignore NULLs. It counts the total number of rows, regardless of what is inside them.
+* When an aggregate function processes a set of rows where the target column is NULL in every row, the result should be NULL.
 
 ## Key Takeaways
 
