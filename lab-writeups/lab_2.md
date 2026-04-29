@@ -9,6 +9,9 @@ See [../GoDB-lab-s26/lab2.md](../GoDB-lab-s26/lab2.md)
 * Sequential Scan, Filter, Projection, and Limit Executors: https://drive.google.com/file/d/1izQUZsfCWIFb8RbpNjElpGywfW5wBSrJ/view?usp=drive_link
 * Index and Index Scan Executors: https://drive.google.com/file/d/149IyE786tChJREHFUJhjixOapA_rj0DF/view?usp=drive_link
 * Insert, Delete, and Update Executors: https://drive.google.com/file/d/1HSA5VosKSPbXOvooXG-GHO7SMUe95lzq/view?usp=drive_link
+* Block Nested Loop Join Executor: https://drive.google.com/file/d/1o88dswzepsdjJA-O7stxoRwJTrvOHXln/view?usp=drive_link
+* Sort Executor: https://drive.google.com/file/d/1XA56S5x44cRsFn6PYxciizQ5Or_FguRF/view?usp=drive_link
+* Aggregate Executor: 
 
 ## Related Source Code
 
@@ -16,8 +19,22 @@ See [../GoDB-lab-s26/lab2.md](../GoDB-lab-s26/lab2.md)
 
 ## Design Choices
 
+### Block Nested Loop Join
 
-## Implementation Challenges
+![](assets/join_executor_buffer.png)
+
+
+The join buffer is implemented as a slice of [storage.Tuple](https://github.com/MIT-DB-Class/GoDB-lab-s26/blob/main/storage/tuple.go#L97-L111), with its capacity constrained by maxTuplesInBlock. Each storage.Tuple acts as a container that holds a pointer to its **materialized** raw tuple data, which conforms to a specific RawTupleDesc.
+
+The maximum number of tuples the buffer can hold is calculated during the **initialization** of the join executor. Since the RawTupleDesc determines a fixed byte size for every tuple in the relation (by summing fixed-size integers and fixed-length strings), we can determine the overhead per entry precisely:
+
+$$N_{max} = \left\lfloor \frac{\text{Block Size}}{\text{sizeof}(\text{storage.Tuple}) + \text{sizeof}(\text{storage.RawTupleDesc})} \right\rfloor$$
+
+Key Design Advantages:
+
+* Fixed-Size Predictability: By using RawTupleDesc to enforce [8-byte alignment and fixed-length fields](https://github.com/MIT-DB-Class/GoDB-lab-s26/blob/main/storage/tuple.go#L60-L80) (e.g., `common.StringLength`), the executor can allocate a join buffer that maximizes memory utilization without the risk of an OutOfMemory error during the join process.
+* Implementation Simplicity: Using `tuple.DeepCopy()` allows the join buffer to take ownership of the data. This prevents issues where the buffer might otherwise point to a page in the buffer pool that could be evicted or modified.
+* Initialization: Calculating capacity at the start of the operator's execution avoids the computational overhead of checking remaining memory for every individual insertion.
 
 
 ## Mistakes I made
@@ -78,5 +95,35 @@ Performing an in-place update requires careful sequencing to prevent index corru
 
 In cases where an index key is associated with multiple RecordIDs, the IndexScanExecutor must buffer the resulting RID list and yield the corresponding tuples one by one across successive Next() calls.
 
+### Sort Executor
+
+In SQL, sorting is usually **lexicographical**: we sort by the first column, and only if there is a tie do we look at the second column.
+
+```go
+sortFunc := func(a, b TupleWithOrdKey) int { 
+    for i := 0; i < len(e.plan.OrderBy); i++ {
+        ret := a.keys[i].Compare(b.keys[i]) 
+        if ret != 0 {
+            if e.plan.OrderBy[i].Direction == planner.SortOrderDescending {
+                return -1 * ret
+            }
+            return ret
+        }
+    }
+    return 0
+}
+slices.SortFunc(e.tuples, sortFunc)
+```
+
+
+## Implementation Challenges
+
+### Block Nested Loop Join
+
+* How to implement the BNLJ algorithm in iterator model
+* Edge Cases: Left/Right table is empty
+
+
 ## Key Takeaways
 
+* Plan node vs executor vs child
