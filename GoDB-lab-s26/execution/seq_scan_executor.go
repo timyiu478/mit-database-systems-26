@@ -46,7 +46,7 @@ func (e *SeqScanExecutor) Current() storage.Tuple {
 }
 
 func (e *SeqScanExecutor) Error() error {
-	return e.Error()
+	return e.it.Error()
 }
 
 func (e *SeqScanExecutor) Close() error {
