@@ -158,6 +158,6 @@ func (e *AggregateExecutor) Error() error {
 
 func (e *AggregateExecutor) Close() error {
 	e.tuples = e.tuples[:0]
-
-	return nil
+	
+	return e.child.Close()
 }
