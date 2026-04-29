@@ -28,12 +28,12 @@ func (e *SeqScanExecutor) PlanNode() planner.PlanNode {
 }
 
 func (e *SeqScanExecutor) Init(context *ExecutorContext) error {
+	e.buf = make([]byte, e.tableHeap.StorageSchema().BytesPerTuple())
 	it, err := e.tableHeap.Iterator(context.txn, e.plan.Mode, e.buf)
 	if err != nil {
 		return err
 	}
 	e.it = &it
-	e.buf = make([]byte, e.tableHeap.StorageSchema().BytesPerTuple())
 	return nil
 }
 
@@ -50,5 +50,6 @@ func (e *SeqScanExecutor) Error() error {
 }
 
 func (e *SeqScanExecutor) Close() error {
+	e.buf = nil
 	return e.it.Close()
 }
