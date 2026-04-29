@@ -64,8 +64,8 @@ func (e *BlockNestedLoopJoinExecutor) Init(ctx *ExecutorContext) error {
 	e.buf = make([]byte, e.leftTupDesc.BytesPerTuple() + e.rightTupDesc.BytesPerTuple())
 
 	tupleOverhead := uint32(unsafe.Sizeof(storage.Tuple{}))
-	dataSize := e.leftTupDesc.BytesPerTuple()
-	totalCostPerTuple := dataSize + int(tupleOverhead)
+	dataSize := uint32(unsafe.Sizeof(e.leftTupDesc))
+	totalCostPerTuple := int(dataSize + tupleOverhead)
 
 	e.maxTuplesInBlock = blockSize / totalCostPerTuple
 
