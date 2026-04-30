@@ -14,6 +14,7 @@ A course about the foundations of database systems, focusing on basics such as t
 My completed projects at a glance:
 
 1. [Storage & Buffer Management](lab-writeups/lab_1.md)
+1. [Query Execution](lab-writeups/lab_2.md)
 
 # Readings
 
