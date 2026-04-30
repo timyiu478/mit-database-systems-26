@@ -95,29 +95,6 @@ func InitializeHeapPage(desc *RawTupleDesc, frame *PageFrame) {
 		numSlotsPtr := (*uint16)(unsafe.Pointer(&frame.Bytes[PageOffsetNumSlots]))
 		*numSlotsPtr = uint16(numSlots)
 
-		// Cache frequently access fields e.g. bitmaps, numSlots and calculate offsets
-		buf := frame.Bytes[:] // convert array to slice once
-
-		frame.rowSize = int(binary.LittleEndian.Uint16(buf[PageOffsetRowSize:]))
-		frame.numSlots = int(binary.LittleEndian.Uint16(buf[PageOffsetNumSlots:]))
-		frame.numUsed = int(binary.LittleEndian.Uint16(buf[PageOffsetNumUsed:]))
-
-		bitmapBytes := (numSlots + 63) / 64 * 8
-		deletedOffset := HeaderSize + bitmapBytes
-		// alignment padding
-		padding := 0
-		if deletedOffset%8 != 0 {
-				padding = 8 - (deletedOffset % 8)
-		}
-		deletedOffset += padding
-
-		frame.bitMapSize = bitmapBytes
-		frame.padding = padding
-		frame.dataStart = deletedOffset + bitmapBytes
-		frame.startHint = 0
-
-		frame.allocBitmap = AsBitmap(buf[HeaderSize:HeaderSize+bitmapBytes], frame.numSlots)
-		frame.deletedBitmap = AsBitmap(buf[deletedOffset:deletedOffset+bitmapBytes], frame.numSlots)
 
 		// Set magic number
 		*paddingPtr = HeapPageMagic
@@ -125,7 +102,32 @@ func InitializeHeapPage(desc *RawTupleDesc, frame *PageFrame) {
 
 // Assume InitializeHeapPage() is called before the call of AsHeapPage()
 func (frame *PageFrame) AsHeapPage() HeapPage {
+	// Cache frequently access fields e.g. bitmaps, numSlots and calculate offsets
+	buf := frame.Bytes[:] // convert array to slice once
+
+	frame.rowSize = int(binary.LittleEndian.Uint16(buf[PageOffsetRowSize:]))
+	frame.numSlots = int(binary.LittleEndian.Uint16(buf[PageOffsetNumSlots:]))
+	frame.numUsed = int(binary.LittleEndian.Uint16(buf[PageOffsetNumUsed:]))
+
+	bitmapBytes := (frame.numSlots + 63) / 64 * 8
+	deletedOffset := HeaderSize + bitmapBytes
+	// alignment padding
+	padding := 0
+	if deletedOffset%8 != 0 {
+			padding = 8 - (deletedOffset % 8)
+	}
+	deletedOffset += padding
+
+	frame.bitMapSize = bitmapBytes
+	frame.padding = padding
+	frame.dataStart = deletedOffset + bitmapBytes
+	frame.startHint = 0
+
+	frame.allocBitmap = AsBitmap(buf[HeaderSize:HeaderSize+bitmapBytes], frame.numSlots)
+	frame.deletedBitmap = AsBitmap(buf[deletedOffset:deletedOffset+bitmapBytes], frame.numSlots)
+
 	hp := HeapPage{frame}
+
 	return hp
 }
 

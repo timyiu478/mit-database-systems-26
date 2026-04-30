@@ -10,33 +10,54 @@ import (
 // It iterates through the B+Tree (or other index type) starting from a specific key
 // and traversing in a specific direction (Forward or Backward).
 type IndexScanExecutor struct {
-	// Fill me in!
+	plan      *planner.IndexScanNode
+	tableHeap *TableHeap
+	ctx       *ExecutorContext
+	index     indexing.Index
+	scanIt        indexing.ScanIterator
 }
 
 func NewIndexScanExecutor(plan *planner.IndexScanNode, index indexing.Index, tableHeap *TableHeap) *IndexScanExecutor {
-	panic("unimplemented")
+	e := &IndexScanExecutor{
+		plan: plan,
+		tableHeap: tableHeap,
+		index: index,
+	}
+
+	return e
 }
 
 func (e *IndexScanExecutor) PlanNode() planner.PlanNode {
-	panic("unimplemented")
+	return e.plan
 }
 
 func (e *IndexScanExecutor) Init(ctx *ExecutorContext) error {
-	panic("unimplemented")
+	e.ctx = ctx
+
+	it, err := e.index.Scan(e.plan.StartKey, e.plan.Direction, e.ctx.txn)
+	if err != nil {
+		return err
+	}
+	e.scanIt = it
+
+	return nil
 }
 
 func (e *IndexScanExecutor) Next() bool {
-	panic("unimplemented")
+	return e.scanIt.Next()
 }
 
 func (e *IndexScanExecutor) Current() storage.Tuple {
-	panic("unimplemented")
+	rid := e.scanIt.Value()
+	buf := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
+	e.tableHeap.ReadTuple(e.ctx.txn, rid, buf, false)
+	return storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
 }
 
 func (e *IndexScanExecutor) Close() error {
-	panic("unimplemented")
+	return e.scanIt.Close()
 }
 
 func (e *IndexScanExecutor) Error() error {
-	panic("unimplemented")
+	return e.scanIt.Error()
 }

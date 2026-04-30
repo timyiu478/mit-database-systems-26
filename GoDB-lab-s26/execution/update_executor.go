@@ -13,38 +13,124 @@ import (
 // The executor updates the table heap in-place and ensures that all relevant indexes are updated
 // if the key columns have changed. It produces a single tuple containing the count of updated rows.
 type UpdateExecutor struct {
-	// Fill me in!
+	child      Executor
+	plan       *planner.UpdateNode
+	tableHeap  *TableHeap
+	ctx        *ExecutorContext
+	indexes    []indexing.Index
+	updatedCount int64
+	updateDone    bool
 }
 
 func NewUpdateExecutor(plan *planner.UpdateNode, child Executor, tableHeap *TableHeap, indexes []indexing.Index) *UpdateExecutor {
-	panic("unimplemented")
+	e := &UpdateExecutor{
+		child: child,
+		plan: plan,
+		tableHeap: tableHeap,
+		indexes: indexes,
+		updatedCount: 0,
+		updateDone: false,
+	}
+
+	return e
 }
 
 func (e *UpdateExecutor) PlanNode() planner.PlanNode {
-	panic("unimplemented")
-
+	return e.plan
 }
 
 func (e *UpdateExecutor) Init(ctx *ExecutorContext) error {
-	panic("unimplemented")
+	e.ctx = ctx
+	return e.child.Init(ctx)
 }
 
 func (e *UpdateExecutor) Next() bool {
-	panic("unimplemented")
+	if e.updateDone {
+		return false
+	}
+
+	tuplesTobeUpdated := make([]storage.Tuple, 0)
+
+	for {
+		ret := e.child.Next()
+		if !ret {
+			break
+		}
+		tuplesTobeUpdated = append(tuplesTobeUpdated, e.child.Current())
+	}
+
+	for _, tuple := range tuplesTobeUpdated {
+		// delete old index key
+		for _, index := range e.indexes {
+			ks := index.Metadata().KeySchema
+			pl := index.Metadata().ProjectionList
+
+			vals := make([]common.Value, ks.NumColumns())	
+			for i := 0; i < ks.NumColumns(); i++ {
+				vals[i] = tuple.GetValue(pl[i])
+			}
+			keyTuple := storage.FromValues().Extend(vals)
+			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
+			keyTuple.WriteToBuffer(rawKeyTuple, ks)
+			key := index.Metadata().AsKey(rawKeyTuple)
+			delErr := index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
+			if delErr != nil {
+				return false
+			}
+		}
+
+		// update tuple
+		vals := make([]common.Value, len(e.plan.Expressions))	
+		for i, expr := range e.plan.Expressions {
+			vals[i] = expr.Eval(tuple)
+		}
+		updatedTuple := storage.FromValues().Extend(vals)
+
+		row := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
+		updatedTuple.WriteToBuffer(row, e.tableHeap.StorageSchema())
+		err := e.tableHeap.UpdateTuple(e.ctx.txn, tuple.RID(), row)
+		if err != nil {
+			return false
+		}
+
+		// insert new index key
+		for _, index := range e.indexes {
+			ks := index.Metadata().KeySchema
+			pl := index.Metadata().ProjectionList
+			updatedVals := make([]common.Value, ks.NumColumns())	
+			for i := 0; i < ks.NumColumns(); i++ {
+				updatedVals[i] = updatedTuple.GetValue(pl[i])
+			}
+			upKeyTuple := storage.FromValues().Extend(updatedVals)
+			upRawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
+			upKeyTuple.WriteToBuffer(upRawKeyTuple, ks)
+			upKey := index.Metadata().AsKey(upRawKeyTuple)
+			insertErr := index.InsertEntry(upKey, tuple.RID(), e.ctx.txn)
+			if insertErr != nil {
+				return false
+			}
+		}
+
+		e.updatedCount++
+	}
+
+	e.updateDone = true
+
+	return true
 }
 
 func (e *UpdateExecutor) OutputSchema() []common.Type {
-	panic("unimplemented")
+	return e.plan.OutputSchema()
 }
 
 func (e *UpdateExecutor) Current() storage.Tuple {
-	panic("unimplemented")
+	return storage.FromValues(common.NewIntValue(e.updatedCount))
 }
 
 func (e *UpdateExecutor) Close() error {
-	panic("unimplemented")
+	return e.child.Close()
 }
 
 func (e *UpdateExecutor) Error() error {
-	panic("unimplemented")
+	return e.child.Error()
 }

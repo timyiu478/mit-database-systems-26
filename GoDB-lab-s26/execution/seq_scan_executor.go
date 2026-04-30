@@ -7,34 +7,49 @@ import (
 
 // SeqScanExecutor implements a sequential scan over a table.
 type SeqScanExecutor struct {
-	// Fill me in!
+	plan      *planner.SeqScanNode
+	tableHeap *TableHeap
+	it        *TableHeapIterator
+	buf       []byte
 }
 
 // NewSeqScanExecutor creates a new SeqScanExecutor.
 func NewSeqScanExecutor(plan *planner.SeqScanNode, tableHeap *TableHeap) *SeqScanExecutor {
-	panic("unimplemented")
+	e := &SeqScanExecutor{
+		plan: plan,
+		tableHeap: tableHeap,
+	}
+
+	return e
 }
 
 func (e *SeqScanExecutor) PlanNode() planner.PlanNode {
-	panic("unimplemented")
+	return e.plan
 }
 
 func (e *SeqScanExecutor) Init(context *ExecutorContext) error {
-	panic("unimplemented")
+	e.buf = make([]byte, e.tableHeap.StorageSchema().BytesPerTuple())
+	it, err := e.tableHeap.Iterator(context.txn, e.plan.Mode, e.buf)
+	if err != nil {
+		return err
+	}
+	e.it = &it
+	return nil
 }
 
 func (e *SeqScanExecutor) Next() bool {
-	panic("unimplemented")
+	return e.it.Next()
 }
 
 func (e *SeqScanExecutor) Current() storage.Tuple {
-	panic("unimplemented")
+	return storage.FromRawTuple(e.it.CurrentTuple(), e.tableHeap.StorageSchema(), e.it.CurrentRID())
 }
 
 func (e *SeqScanExecutor) Error() error {
-	panic("unimplemented")
+	return e.it.Error()
 }
 
 func (e *SeqScanExecutor) Close() error {
-	panic("unimplemented")
+	e.buf = nil
+	return e.it.Close()
 }
