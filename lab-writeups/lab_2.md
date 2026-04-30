@@ -14,7 +14,7 @@ See [../GoDB-lab-s26/lab2.md](../GoDB-lab-s26/lab2.md)
 * Aggregate Executor: https://drive.google.com/file/d/1EmbwN7UChtIVYVWnK0Jdl47kVLRtXZER/view?usp=drive_link
 * Hash Executor: https://drive.google.com/file/d/1eke0IKjkpe1c0WuFmuZZ26hSsCNEkVv6/view?usp=sharing
 * TopN Optimization Executor: https://drive.google.com/file/d/1KYs2uAH9pAWtnf6KwjosnYIC2TYcq_sD/view?usp=sharing
-* Sort-Merge Join Executor: 
+* Sort-Merge Join Executor: https://drive.google.com/file/d/19Z-jw4qA77u5ajgXAMGLr0N2UwkCcXa8/view?usp=sharing
 
 ## Related Source Code
 
