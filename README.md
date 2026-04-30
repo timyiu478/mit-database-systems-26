@@ -4,7 +4,7 @@ A course about the foundations of database systems, focusing on basics such as t
 
 # Hands-On Programming Projects - GoDB
 
-<video src="assets/query_example.mp4" autoplay loop muted playsinline></video>
+![query example](assets/query_example.gif)
 
 ![](assets/godb_high_level_arch.png)
 
