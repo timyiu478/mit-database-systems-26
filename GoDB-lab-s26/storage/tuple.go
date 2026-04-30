@@ -255,3 +255,39 @@ func (t Tuple) Equals(other Tuple) bool {
 
 	return true
 }
+
+// Compare compares this tuple with another tuple lexicographically.
+// It returns -1 if t < other, 1 if t > other, and 0 if they are equal.
+func (t Tuple) Compare(other Tuple) int {
+	// 1. Determine the number of columns to compare
+	// Standard lexicographical comparison typically handles different lengths,
+	// but in a Join context, the schema (number of columns) is usually identical.
+	n1 := t.NumColumns()
+	n2 := other.NumColumns()
+	minLen := n1
+	if (minLen > n2) {
+		minLen = n2
+	}
+
+	// 2. Iterate through columns and compare values
+	for i := 0; i < minLen; i++ {
+		v1 := t.GetValue(i)
+		v2 := other.GetValue(i)
+
+		// Using the Compare method from the value type
+		cmp := v1.Compare(v2)
+		if cmp != 0 {
+			return cmp // Returns -1 or 1 immediately if a difference is found
+		}
+	}
+
+	// 3. Handle cases where all prefix columns are equal but lengths differ
+	if n1 < n2 {
+		return -1
+	} else if n1 > n2 {
+		return 1
+	}
+
+	// 4. Perfectly equal (matches the logic of your Equals function)
+	return 0
+}
