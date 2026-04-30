@@ -14,6 +14,7 @@ See [../GoDB-lab-s26/lab2.md](../GoDB-lab-s26/lab2.md)
 * Aggregate Executor: https://drive.google.com/file/d/1EmbwN7UChtIVYVWnK0Jdl47kVLRtXZER/view?usp=drive_link
 * Hash Executor: https://drive.google.com/file/d/1eke0IKjkpe1c0WuFmuZZ26hSsCNEkVv6/view?usp=sharing
 * TopN Optimization Executor: https://drive.google.com/file/d/1KYs2uAH9pAWtnf6KwjosnYIC2TYcq_sD/view?usp=sharing
+* Sort-Merge Join Executor: 
 
 ## Related Source Code
 
@@ -29,7 +30,7 @@ The join buffer is implemented as a slice of [storage.Tuple](https://github.com/
 
 The maximum number of tuples the buffer can hold is calculated during the **initialization** of the join executor. Since the RawTupleDesc determines a fixed byte size for every tuple in the relation (by summing fixed-size integers and fixed-length strings), we can determine the overhead per entry precisely:
 
-$$N_{max} = \left\lfloor \frac{\text{Block Size}}{\text{sizeof}(\text{storage.Tuple}) + \text{sizeof}(\text{storage.RawTupleDesc})} \right\rfloor$$
+$$\left\lfloor \frac{\text{Block Size}}{\text{sizeof}(\text{storage.Tuple}) + \text{sizeof}(\text{storage.RawTupleDesc})} \right\rfloor$$
 
 Key Design Advantages:
 
@@ -145,4 +146,4 @@ The "Ignore" Rule:
 
 ## Key Takeaways
 
-* Plan node vs executor vs child
+* A deeper understanding of the meaning of query execution is a DAG of executors
