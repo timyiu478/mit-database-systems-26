@@ -1,6 +1,10 @@
 package common
 
 import "fmt"
+import "log"
+
+// Debugging
+const Debug = false
 
 // Align8 rounds the given integer up to the nearest multiple of 8.
 // This is typically used to ensure proper memory alignment for 64-bit
@@ -57,4 +61,10 @@ func Hash(data []byte) uint64 {
 		h *= prime64
 	}
 	return h
+}
+
+func DPrintf(format string, a ...interface{}) {
+	if Debug {
+		log.Printf(format, a...)
+	}
 }
