@@ -13,8 +13,14 @@ A course about the foundations of database systems, focusing on basics such as t
 
 My completed projects at a glance:
 
-1. [Storage & Buffer Management](lab-writeups/lab_1.md)
+1. [](lab-writeups/lab_1.md)
 1. [Query Execution](lab-writeups/lab_2.md)
+
+| # | Title | Description | Tags |
+| - | - | - | - |
+| 1 | Storage & Buffer Management | The engine moves data between disk and memory, organizes that data within fixed-size pages, and provides an interface for higher-level operators to read and write tuples. | `Buffer Pool`, `Table Heap`  |
+| 2 | Query Execution | Build the Execution Engine consists of the core data processing logic of a database system. | `Volcano Iterator Model`, `Indexing`, `Access Method`, `Join` |
+| 3 | Transactions & Concurrency Control | Transform GoDB from a single-threaded query execution engine into a full transactional database system | `Strong Strict Two-Phase Locking`, `Locking Manager`, `Write-ahead Logging`, `Transaction Manager` |
 
 # Readings
 
