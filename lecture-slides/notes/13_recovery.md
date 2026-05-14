@@ -1,4 +1,4 @@
-The FORCE policy in database recovery refers specifically to **the moment of commit**, **NOT during** the transaction itself.
+The FORCE policy in database recovery refers specifically to **the moment of commit**/before the commit point, **NOT during** the transaction itself.
 The STEAL policy is about what can happen during a transaction lifetime, not just at commit.
 
 NO STEAL + FORCE:
