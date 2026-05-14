@@ -413,7 +413,7 @@ func (lm *LockManager) lock(lr *LockRequest) error {
 	holdInfo, loaded := lcb.holders[lr.tid]
 
 	// Check if Transaction already holds the lock and the new lock request mode is covered
-	if loaded && lm.isLockModeCovered(holdInfo.mode, lr.mode) {
+	if loaded && lm.IsLockModeCovered(holdInfo.mode, lr.mode) {
 		// Add child
 		if lr.hasChild {
 			holdInfo.childs[lr.child] = true
@@ -491,9 +491,9 @@ func (lm *LockManager) lock(lr *LockRequest) error {
 		}
 	}
 
-	lm.graphMu.Unlock()
-
 	numWaiters := len(lm.waitGraph)
+
+	lm.graphMu.Unlock()
 
 	lcb.mu.Unlock()
 
@@ -573,7 +573,7 @@ func (lm *LockManager) unlock(ulr *UnlockRequest) error {
 
 // Is mode 1 cover mode 2?
 // IX and S are not incomparable
-func (lm *LockManager) isLockModeCovered(mode1 DBLockMode, mode2 DBLockMode) bool {
+func (lm *LockManager) IsLockModeCovered(mode1 DBLockMode, mode2 DBLockMode) bool {
 	if mode1 == LockModeS && mode2 == LockModeIX || mode2 == LockModeS && mode1 == LockModeIX {
 		return false
 	}
@@ -794,7 +794,7 @@ func (lm *LockManager) wakeUpCompatibleWaiters(lcb *LockControlBlock) {
 
 		holdInfo, loadedHoldInfo := lcb.holders[waiter.tid]
 
-		isCovered := loadedHoldInfo && lm.isLockModeCovered(holdInfo.mode, waiter.mode)
+		isCovered := loadedHoldInfo && lm.IsLockModeCovered(holdInfo.mode, waiter.mode)
 		isCompatible := lm.isLockModeCompatible(waiter, lcb)
 
 		if isCovered {
