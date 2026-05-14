@@ -7,7 +7,7 @@ See [../GoDB-lab-s26/lab3.md](../GoDB-lab-s26/lab3.md)
 ## Test Results
 
 * Lock Manager: https://drive.google.com/file/d/1cH0q4HMUfFC6WiDaFmmEtJhCHVUZXdQN/view
-
+* Transaction Context: https://drive.google.com/file/d/18By0w95j6aLh2Patea_4bJdBdLovJA41/view
 
 ## Related Source Code
 
@@ -172,10 +172,6 @@ Table A:
 ```
 
 Although T3 and T4 are now compatible with the current holder (T1), they remain asleep. In the original logic, the "Wake-up" signal is only triggered by an explicit Unlock() call. Since the victim (T2) was removed by the deadlock resolver rather than a standard unlock, and the remaining holder (T1) is still blocked elsewhere, no signal is ever sent. T3 and T4 become "Orphaned Waiters," blocked indefinitely.
-
-### Transaction Context
-
-
 
 ## Key Takeaways
 
