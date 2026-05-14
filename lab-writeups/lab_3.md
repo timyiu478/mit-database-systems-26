@@ -23,7 +23,7 @@ The Lock Manager utilizes a Concurrent Hash Map (Lock Registry) to manage Lock C
 
 When a transaction requests a lock:
 
-* Immediate Grant: The lock is granted if the requested mode is compatible with current holders and the waiter queue is empty.
+* Immediate Grant: A lock is granted immediately if the requested mode is compatible with all current holders and the waiter queue is empty, or if the requested mode is already covered by the requester's existing lock.
 * Blocking (FIFO Fairness): If there is a conflict or if other transactions are already waiting, the request is appended to the end of a FIFO Waiter Queue. The transaction then blocks on its own dedicated notification channel.
 * Strict Fairness: By enforcing a FIFO queue, we prevent livelock/starvation, ensuring that newer, high-privilege requests (like an X lock) cannot perpetually jump ahead of older pending requests.
 
@@ -47,6 +47,11 @@ Key Assumptions and Guardrails
 
 * Sequential Execution: The design assumes each transaction is strictly sequential; a transaction blocked on a Lock() call will not attempt further lock or unlock operations until granted or aborted.
 * Atomic State Transitions: All modifications to LCBs and the WFG are protected by fine-grained synchronization to prevent race conditions between concurrent requests and the singleton deadlock resolver.
+
+Problems:
+
+* Use a single global mutex to protect the lock table. Possible Improvement: Lock table sharding.
+* Treat "Deadlock Detection" as a global synchronous event. No lock or unlock operations can be performed when deadlock detection is travelling the Wait-For graph. Possible Improvement: use Wait-Die/Would-Wait deadlock prevention strategy.
 
 ## Implementation Challenges
 
@@ -167,6 +172,10 @@ Table A:
 ```
 
 Although T3 and T4 are now compatible with the current holder (T1), they remain asleep. In the original logic, the "Wake-up" signal is only triggered by an explicit Unlock() call. Since the victim (T2) was removed by the deadlock resolver rather than a standard unlock, and the remaining holder (T1) is still blocked elsewhere, no signal is ever sent. T3 and T4 become "Orphaned Waiters," blocked indefinitely.
+
+### Transaction Context
+
+
 
 ## Key Takeaways
 
