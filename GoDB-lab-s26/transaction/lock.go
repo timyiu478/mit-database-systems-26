@@ -93,7 +93,6 @@ type LockRequest struct {
 	waitCh  chan error
 	explicit bool
 	hasChild bool
-	isHandling atomic.Bool
 }
 
 type UnlockRequest struct {
@@ -846,48 +845,4 @@ func (lm *LockManager) wakeUpCompatibleWaiters(lcb *LockControlBlock) {
 		common.DPrintf(fmt.Sprintf("Waking up tid %d that is waiting for tag %s", txnLR.tid, txnLR.tag.String()))
 		txnLR.waitCh <- nil
 	}
-}
-
-func (lm *LockManager) localCycleDetect(tid common.TransactionID) bool {
-	lm.graphMu.Lock()
-	// If the transaction is no longer waiting (e.g., granted by a concurrent unlock), skip
-	if _, isWaiting := lm.waitGraph[tid]; !isWaiting {
-		lm.graphMu.Unlock()
-		return false
-	}
-
-	visited := make(map[common.TransactionID]bool)
-	path := []common.TransactionID{}
-
-	var dfs func(curr common.TransactionID) []common.TransactionID
-	dfs = func(curr common.TransactionID) []common.TransactionID {
-		visited[curr] = true
-		path = append(path, curr)
-
-		for neighbor := range lm.waitGraph[curr] {
-			if neighbor == tid {
-				// Cycle found involving the starting TID
-				return append([]common.TransactionID{}, path...)
-			}
-			if !visited[neighbor] {
-				if cycle := dfs(neighbor); cycle != nil {
-					return cycle
-				}
-			}
-		}
-
-		path = path[:len(path)-1]
-		return nil
-	}
-
-	cycle := dfs(tid)
-	lm.graphMu.Unlock()
-
-	if cycle != nil {
-		common.DPrintf("Local deadlock detected for Tid %d! Cycle: %v", tid, cycle)
-		lm.resolveCycle(cycle)
-		return true
-	}
-
-	return false
 }
