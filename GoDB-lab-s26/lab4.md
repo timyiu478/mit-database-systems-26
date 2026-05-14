@@ -201,9 +201,7 @@ Run `go test -v ./recovery -run TestCheckpointManager` to verify that checkpoint
 Recall that textbook ARIES has three phases. Here's how they each look like mapped onto GoDB:
 #### Analysis
 
-Scan the log forward from the checkpoint LSN, rebuilding the DPT and ATT. When you encounter a `LogEndCheckpoint`, merge
-its embedded tables into the running state — entries already observed in the forward scan are more recent and take precedence.
-The analysis phase also computes the earliest LSN Redo must read from, and the LSN of the final record seen, where Redo stops.
+Scan the log forward from the checkpoint LSN, rebuilding the DPT and ATT. When you encounter a LogEndCheckpoint, merge its embedded tables into the running state — for the ATT, forward-scan entries take precedence (a transaction already seen finishing should not be re-added from the snapshot); for the DPT, snapshot entries take precedence (equivalently, keep the minimum recoveryLSN) so pre-checkpoint not-yet-flushed updates aren't skipped. The analysis phase also computes the earliest LSN Redo must read from, and the LSN of the final record seen, where Redo stops.
 
 #### Redo
 
