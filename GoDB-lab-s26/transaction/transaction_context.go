@@ -112,25 +112,48 @@ func (txn *TransactionContext) AddCommitTask(task IndexTask) {
 // held).  If the lock cannot be acquired immediately, this call may block or fail due
 // to a deadlock.
 func (txn *TransactionContext) AcquireLock(tag DBLockTag, mode DBLockMode) error {
-	panic("unimplemented")
+	heldMode, loaded := txn.heldLocks[tag]
+	if loaded && txn.lm.IsLockModeCovered(heldMode, mode) {
+		return nil
+	}
+
+	err := txn.lm.Lock(txn.id, tag, mode)
+
+	if err != nil {
+		return err
+	}
+
+	txn.heldLocks[tag] = mode
+
+	return nil
 }
 
 // HeldLock returns the lock mode this transaction currently holds on the specified resource,
 // along with a boolean indicating whether any lock is held.
 func (txn *TransactionContext) HeldLock(tag DBLockTag) (DBLockMode, bool) {
-	panic("unimplemented")
+	mode, loaded := txn.heldLocks[tag]
+	if !loaded {
+		return LockModeS, false
+	}
+	return mode, true
 }
 
 // ReleaseAllLocks releases all locks held by this transaction.
 // This is typically called during the Commit or Abort phase of the transaction lifecycle.
 func (txn *TransactionContext) ReleaseAllLocks() {
-	panic("unimplemented")
+	for tag, _ := range txn.heldLocks {
+		txn.lm.Unlock(txn.id, tag)
+	}
 }
 
 // Reset clears the transaction context for reuse.
 // This is critical when using sync.Pool to avoid leaking data between users.
 func (txn *TransactionContext) Reset(id common.TransactionID) {
-	panic("unimplemented")
+	txn.logRecords.reset()
+	txn.id = id
+	clear(txn.heldLocks)
+	txn.abortActions = txn.abortActions[:0]
+	txn.commitActions = txn.commitActions[:0]
 }
 
 // NewTestTransactionContext creates a TransactionContext for use in tests that need
