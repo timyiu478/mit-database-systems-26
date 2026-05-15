@@ -1,9 +1,13 @@
 package execution
 
 import (
+	"fmt"
+
 	"mit.edu/dsg/godb/indexing"
 	"mit.edu/dsg/godb/planner"
 	"mit.edu/dsg/godb/storage"
+	"mit.edu/dsg/godb/transaction"
+	"mit.edu/dsg/godb/common"
 )
 
 // IndexScanExecutor executes a range scan over an index.
@@ -14,7 +18,9 @@ type IndexScanExecutor struct {
 	tableHeap *TableHeap
 	ctx       *ExecutorContext
 	index     indexing.Index
-	scanIt        indexing.ScanIterator
+	scanIt    indexing.ScanIterator
+	buf       storage.RawTuple
+	tup 			storage.Tuple
 }
 
 func NewIndexScanExecutor(plan *planner.IndexScanNode, index indexing.Index, tableHeap *TableHeap) *IndexScanExecutor {
@@ -40,18 +46,45 @@ func (e *IndexScanExecutor) Init(ctx *ExecutorContext) error {
 	}
 	e.scanIt = it
 
+	e.buf = make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
+
+	// Transaction Hook: acquires IS/IX on the table
+	if e.ctx.txn != nil {
+		tableLockMode := transaction.LockModeIS
+		if e.plan.ForUpdate {
+			tableLockMode = transaction.LockModeIX
+		}
+		tableTag := transaction.NewTableLockTag(e.plan.TableOid)
+		e.ctx.txn.AcquireLock(tableTag, tableLockMode)
+		common.DPrintf(fmt.Sprintf("Acquired lock on %s with mode %d", tableTag.String(), tableLockMode))
+	}
+	
+
 	return nil
 }
 
 func (e *IndexScanExecutor) Next() bool {
-	return e.scanIt.Next()
+	for e.scanIt.Next() {
+		rid := e.scanIt.Value()
+		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
+		// Skips stale heap entry
+		if err == ErrTupleDeleted {
+			continue
+		}
+		// Skips key mismatch
+		key := e.index.Metadata().AsKey(e.buf)
+		if !key.Equals(e.scanIt.Key()) {
+			continue
+		}
+		e.tup = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
+		return true
+	}
+
+	return false
 }
 
 func (e *IndexScanExecutor) Current() storage.Tuple {
-	rid := e.scanIt.Value()
-	buf := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
-	e.tableHeap.ReadTuple(e.ctx.txn, rid, buf, false)
-	return storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
+	return e.tup
 }
 
 func (e *IndexScanExecutor) Close() error {
