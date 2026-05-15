@@ -8,6 +8,7 @@ See [../GoDB-lab-s26/lab3.md](../GoDB-lab-s26/lab3.md)
 
 * Lock Manager: https://drive.google.com/file/d/1cH0q4HMUfFC6WiDaFmmEtJhCHVUZXdQN/view
 * Transaction Context: https://drive.google.com/file/d/18By0w95j6aLh2Patea_4bJdBdLovJA41/view
+* Execution Engine Integration: https://drive.google.com/file/d/1ZOCJm3ZWMTd3EVFwDLycfGKzKBKIOSDC/view
 
 ## Related Source Code
 
@@ -52,6 +53,19 @@ Problems:
 
 * Use a single global mutex to protect the lock table. Possible Improvement: Lock table sharding.
 * Treat "Deadlock Detection" as a global synchronous event. No lock or unlock operations can be performed when deadlock detection is travelling the Wait-For graph. Possible Improvement: use Wait-Die/Would-Wait deadlock prevention strategy.
+
+### Execution Engine Integration
+
+#### Prevents WAL violation
+
+A dirty page may only be written to stable storage (the database file) once all log records describing modifications to that page have been flushed to stable storage (the log file). This fundamental safety requirement is expressed by the inequality: $\text{PageLSN} \le \text{FlushedLSN}$.
+
+In our current implementation, the Buffer Pool triggers eviction logic only when it has exhausted all empty frames. During the [victim selection](https://github.com/timyiu478/mit-database-systems/blob/cbc5d0c2bdf329fb902a70feba63c7a2a992b23b/GoDB-lab-s26/storage/buffer_pool.go#L279-L315) process, a page is considered a valid candidate for eviction only if it satisfies a specific WAL criterion: its PageLSN must be less than or equal to the current FlushedLSN of the Log Manager.
+
+Problems:
+
+* Buffer Pool Starvation: Even if many page frames have a reference count of zero (meaning they are technically unpinned), the system may fail to find a valid eviction victim if every candidate contains "unflushed" changes ($\text{PageLSN} > \text{FlushedLSN}$).
+    * Possible Improvement: the Buffer Pool can force the Log Manager to flush up to the candidate's PageLSN, thereby "unlocking" the page for safe eviction.
 
 ## Implementation Challenges
 
