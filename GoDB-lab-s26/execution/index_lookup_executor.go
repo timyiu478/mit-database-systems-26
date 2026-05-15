@@ -57,14 +57,31 @@ func (e *IndexLookupExecutor) Next() bool {
 		e.scanned = true
 	}
 
-	rid := e.rids[e.cursor]
-	buf := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
-	e.tableHeap.ReadTuple(e.ctx.txn, rid, buf, e.plan.ForUpdate)
-	e.tuple = storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
+	for e.cursor < len(e.rids) {
+		rid := e.rids[e.cursor]
+		buf := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
+		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, buf, e.plan.ForUpdate)
 
-	e.cursor++
+		e.cursor++
 
-	return true
+		// Skips stale heap entry
+		if err == ErrTupleDeleted {
+			continue
+		}
+		
+		key := e.index.Metadata().AsKey(buf)
+
+		// Skips key mismatch
+		if !key.Equals(e.plan.EqualityKey) {
+			continue
+		}
+
+		e.tuple = storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
+
+		return true
+	}
+
+	return false
 }
 
 func (e *IndexLookupExecutor) Current() storage.Tuple {
