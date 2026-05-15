@@ -22,6 +22,8 @@ type BufferPoolShard struct {
 
 	youngList      *list.List
 	oldList        *list.List
+
+	logManager     LogManager
 }
 
 // BufferPool manages the reading and writing of database pages between the DiskFileManager and memory.
@@ -41,7 +43,7 @@ type BufferPool struct {
 	numShards      uint64
 }
 
-func NewBufferPoolShard(numPages uint64) *BufferPoolShard {
+func NewBufferPoolShard(numPages uint64, logManager LogManager) *BufferPoolShard {
 	bps := &BufferPoolShard{}
 
 	bps.numPages = numPages
@@ -49,6 +51,8 @@ func NewBufferPoolShard(numPages uint64) *BufferPoolShard {
 
 	bps.youngList = list.New()
 	bps.oldList = list.New()
+
+	bps.logManager = logManager
 
 	return bps
 }
@@ -76,9 +80,9 @@ func NewBufferPool(numPages int, storageManager DBFileManager, logManager LogMan
 
 	for i := uint64(0); i < bp.numShards; i++ {
 	  if i < remainderPages {
-			bp.shards[i] = NewBufferPoolShard(pagesPerShard + 1)
+			bp.shards[i] = NewBufferPoolShard(pagesPerShard + 1, logManager)
 		} else {
-			bp.shards[i] = NewBufferPoolShard(pagesPerShard)
+			bp.shards[i] = NewBufferPoolShard(pagesPerShard, logManager)
 		}
 	}
 
@@ -272,9 +276,18 @@ func (bps *BufferPoolShard) getPageFromPool(pageID common.PageID) (*PageFrame) {
 	return nil
 }
 
+// Evitable victim conditions:
+// 1. refCount is 0
+// 2. page frame LSN <= LogManager.FlushedUntil()
+// 3. its page latch can be granted
 func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
+	flushedUntil := bps.logManager.FlushedUntil()
+
 	for e := bps.oldList.Back(); e != nil; e = e.Prev() {
 		pf := e.Value.(*PageFrame)
+		if pf.LSN() > flushedUntil {
+			continue
+		}
 		if pf.refCount.CompareAndSwap(0, 1) {
   		_, loaded := bps.pageLock.LoadOrStore(pf.pageId.String(), true)
 			if loaded {
@@ -286,6 +299,9 @@ func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
 	}
 	for e := bps.youngList.Back(); e != nil; e = e.Prev() {
 		pf := e.Value.(*PageFrame)	
+		if pf.LSN() > flushedUntil {
+			continue
+		}
 		if pf.refCount.CompareAndSwap(0, 1) {
   		_, loaded := bps.pageLock.LoadOrStore(pf.pageId.String(), true)
 			if loaded {
@@ -337,7 +353,7 @@ func (bps *BufferPoolShard) rollbackEviction(pf *PageFrame) {
 	bps.mu.Lock()
 	defer bps.mu.Unlock()
 
-	pf.refCount.Store(0) 
+	pf.refCount.Store(0)
 
 	var e *list.Element
 	if pf.inOld {
