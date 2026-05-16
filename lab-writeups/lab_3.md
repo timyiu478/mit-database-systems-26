@@ -58,14 +58,13 @@ Problems:
 
 #### Prevents WAL violation
 
-A dirty page may only be written to stable storage (the database file) once all log records describing modifications to that page have been flushed to stable storage (the log file). This fundamental safety requirement is expressed by the inequality: $\text{PageLSN} \le \text{FlushedLSN}$.
+A dirty page may only be written to stable storage (the database file) once all log records describing modifications to that page have been flushed to stable storage (the log file). This fundamental safety requirement is expressed by the inequality: $\text{PageLSN} < \text{FlushedLSN}$.
 
 In our current implementation, the Buffer Pool triggers eviction logic only when it has exhausted all empty frames. During the [victim selection](https://github.com/timyiu478/mit-database-systems/blob/cbc5d0c2bdf329fb902a70feba63c7a2a992b23b/GoDB-lab-s26/storage/buffer_pool.go#L279-L315) process, a page is considered a valid candidate for eviction only if it satisfies a specific WAL criterion: its PageLSN must be less than or equal to the current FlushedLSN of the Log Manager.
 
 Problems:
 
-* Buffer Pool Starvation: Even if many page frames have a reference count of zero (meaning they are technically unpinned), the system may fail to find a valid eviction victim if every candidate contains "unflushed" changes ($\text{PageLSN} > \text{FlushedLSN}$).
-    * Possible Improvement: the Buffer Pool can force the Log Manager to flush up to the candidate's PageLSN, thereby "unlocking" the page for safe eviction.
+* Buffer Pool Starvation: Even if many page frames have a reference count of zero (meaning they are technically unpinned), the system may fail to find a valid eviction victim if every candidate contains "unflushed" changes ($\text{PageLSN} >= \text{FlushedLSN}$).
 
 ## Implementation Challenges
 
@@ -186,9 +185,6 @@ Table A:
 ```
 
 Although T3 and T4 are now compatible with the current holder (T1), they remain asleep. In the original logic, the "Wake-up" signal is only triggered by an explicit Unlock() call. Since the victim (T2) was removed by the deadlock resolver rather than a standard unlock, and the remaining holder (T1) is still blocked elsewhere, no signal is ever sent. T3 and T4 become "Orphaned Waiters," blocked indefinitely.
-
-## Key Takeaways
-
 
 ## Sketches
 
