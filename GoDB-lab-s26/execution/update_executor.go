@@ -51,12 +51,16 @@ func (e *UpdateExecutor) Next() bool {
 
 	tuplesTobeUpdated := make([]storage.Tuple, 0)
 
+	childOutputSchema := e.child.PlanNode().OutputSchema()
+	childDesc := storage.NewRawTupleDesc(childOutputSchema)
+
 	for {
 		ret := e.child.Next()
 		if !ret {
 			break
 		}
-		tuplesTobeUpdated = append(tuplesTobeUpdated, e.child.Current())
+		tup := e.child.Current()
+		tuplesTobeUpdated = append(tuplesTobeUpdated, tup.DeepCopy(childDesc))
 	}
 
 	for _, tuple := range tuplesTobeUpdated {
