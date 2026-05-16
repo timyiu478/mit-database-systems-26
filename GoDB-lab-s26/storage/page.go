@@ -19,6 +19,8 @@ type PageFrame struct {
 	Bytes [common.PageSize]byte
 	// PageLatch protects the content of the page from concurrent access.
 	PageLatch sync.RWMutex
+	// Protects AsHeapPage()
+	cached         atomic.Bool
 	// Hint: You will need to add fields and synchronization structures here to track the state of this page.
 	rowSize        int
 	numSlots       int

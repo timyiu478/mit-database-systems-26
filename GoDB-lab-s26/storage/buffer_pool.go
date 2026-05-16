@@ -323,6 +323,7 @@ func (bps *BufferPoolShard) evictPage() *PageFrame {
 	if (bps.oldList.Len()+bps.youngList.Len()+int(bps.numBaking)) < int(bps.numPages) {
 		pf := &PageFrame{}
 		pf.isDirty.Store(false)
+		pf.cached.Store(false)
 		pf.refCount.Store(1)
 		pf.inOld = true
 		pf.pageId.Oid = common.InvalidObjectID
@@ -342,6 +343,8 @@ func (bps *BufferPoolShard) evictPage() *PageFrame {
 	} else {
 		bps.oldList.Remove(evictE)
 	}
+
+	victim.cached.Store(false)
 
 	bps.numBaking++
 
