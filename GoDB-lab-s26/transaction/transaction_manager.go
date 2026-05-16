@@ -71,10 +71,12 @@ func (tm *TransactionManager) Begin() (*TransactionContext, error) {
 	lsn, err := tm.logManager.Append(txn.NewBeginTransactionRecord())
 
 	if err != nil {
-		return txn, err
+		return nil, err
 	}
 
 	tm.activeTxns.Store(txn.ID(), activeTxnEntry{txn: txn, startLsn: lsn})
+
+	common.DPrintf(fmt.Sprintf("Added Begin Record into WAL, tid-%d\n", txn.ID()))
 
 	return txn, nil
 }
@@ -95,7 +97,11 @@ func (tm *TransactionManager) Commit(txn *TransactionContext) error {
 		return err
 	}
 
-	tm.logManager.WaitUntilFlushed(lsn)
+	if err := tm.logManager.WaitUntilFlushed(lsn); err != nil {
+		return err
+	}
+
+	common.DPrintf(fmt.Sprintf("Added Commit Record into WAL, tid-%d\n", txn.ID()))
 
 	tm.activeTxns.Delete(txn.ID())
 
@@ -133,55 +139,57 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 		switch record.RecordType() {
 		case storage.LogInsert:
 			clr = txn.NewInsertCLR(record)
-		case storage.LogDelete:
-			clr = txn.NewDeleteCLR(record)
-		case storage.LogUpdate:
-			clr = txn.NewUpdateCLR(record)
-		}
-
-		if clr.Size() > 0 {
 			lsn, err = tm.logManager.Append(clr)
 			if err != nil {
 				return err
 			}
-
-			switch clr.RecordType() {
-			case storage.LogInsertCLR:
-				rid := clr.RID()
-				pf, err = tm.bufferPool.GetPage(rid.PageID)
-				if err != nil {
-					return nil
-				}
-				pf.PageLatch.Lock()
-				heapPage := pf.AsHeapPage()
-				heapPage.MarkDeleted(rid, true)
-				pf.MonotonicallyUpdateLSN(lsn)
-				pf.PageLatch.Unlock()
-			case storage.LogDeleteCLR:
-				rid := clr.RID()
-				pf, err = tm.bufferPool.GetPage(rid.PageID)
-				if err != nil {
-					return nil
-				}
-				pf.PageLatch.Lock()
-				heapPage := pf.AsHeapPage()
-				heapPage.MarkDeleted(rid, false)
-				pf.MonotonicallyUpdateLSN(lsn)
-				pf.PageLatch.Unlock()
-			case storage.LogUpdateCLR:
-				rid := clr.RID()
-				afterImage := clr.AfterImage()
-				pf, err = tm.bufferPool.GetPage(rid.PageID)
-				if err != nil {
-					return nil
-				}
-				pf.PageLatch.Lock()
-				heapPage := pf.AsHeapPage()
-				tup := heapPage.AccessTuple(rid)
-				copy(tup, afterImage)
-				pf.MonotonicallyUpdateLSN(lsn)
-				pf.PageLatch.Unlock()
+			rid := clr.RID()
+			pf, err = tm.bufferPool.GetPage(rid.PageID)
+			if err != nil {
+				return err
 			}
+			pf.PageLatch.Lock()
+			heapPage := pf.AsHeapPage()
+			heapPage.MarkDeleted(rid, true)
+			pf.MonotonicallyUpdateLSN(lsn)
+			pf.PageLatch.Unlock()
+			tm.bufferPool.UnpinPage(pf, true)
+		case storage.LogDelete:
+			clr = txn.NewDeleteCLR(record)
+			lsn, err = tm.logManager.Append(clr)
+			if err != nil {
+				return err
+			}
+			rid := clr.RID()
+			pf, err = tm.bufferPool.GetPage(rid.PageID)
+			if err != nil {
+				return err
+			}
+			pf.PageLatch.Lock()
+			heapPage := pf.AsHeapPage()
+			heapPage.MarkDeleted(rid, false)
+			pf.MonotonicallyUpdateLSN(lsn)
+			pf.PageLatch.Unlock()
+			tm.bufferPool.UnpinPage(pf, true)
+		case storage.LogUpdate:
+			clr = txn.NewUpdateCLR(record)
+			lsn, err = tm.logManager.Append(clr)
+			if err != nil {
+				return err
+			}
+			rid := clr.RID()
+			afterImage := clr.AfterImage()
+			pf, err = tm.bufferPool.GetPage(rid.PageID)
+			if err != nil {
+				return err
+			}
+			pf.PageLatch.Lock()
+			heapPage := pf.AsHeapPage()
+			tup := heapPage.AccessTuple(rid)
+			copy(tup, afterImage)
+			pf.MonotonicallyUpdateLSN(lsn)
+			pf.PageLatch.Unlock()
+			tm.bufferPool.UnpinPage(pf, true)
 		}
 	}
 
@@ -191,7 +199,11 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 		return err
 	}
 
-	tm.logManager.WaitUntilFlushed(lsn)
+	if err := tm.logManager.WaitUntilFlushed(lsn); err != nil {
+		return err
+	}
+
+	common.DPrintf(fmt.Sprintf("Added Abort Record into WAL, tid-%d\n", txn.ID()))
 
 	tm.activeTxns.Delete(txn.ID())
 
