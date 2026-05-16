@@ -146,6 +146,7 @@ func (bp *BufferPool) GetPage(pageID common.PageID) (*PageFrame, error) {
 			shard.rollbackEviction(victim)
 			return nil, err
 		}
+		bp.logManager.WaitUntilFlushed(victim.LSN())
 		if err := dbFile.WritePage(int(victim.pageId.PageNum), victim.Bytes[:]); err != nil {
 			shard.rollbackEviction(victim)
 			return nil, err
@@ -281,13 +282,8 @@ func (bps *BufferPoolShard) getPageFromPool(pageID common.PageID) (*PageFrame) {
 // 2. page frame LSN <= LogManager.FlushedUntil()
 // 3. its page latch can be granted
 func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
-	flushedUntil := bps.logManager.FlushedUntil()
-
 	for e := bps.oldList.Back(); e != nil; e = e.Prev() {
 		pf := e.Value.(*PageFrame)
-		if pf.LSN() >= flushedUntil {
-			continue
-		}
 		if pf.refCount.CompareAndSwap(0, 1) {
   		_, loaded := bps.pageLock.LoadOrStore(pf.pageId.String(), true)
 			if loaded {
@@ -299,9 +295,6 @@ func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
 	}
 	for e := bps.youngList.Back(); e != nil; e = e.Prev() {
 		pf := e.Value.(*PageFrame)	
-		if pf.LSN() >= flushedUntil {
-			continue
-		}
 		if pf.refCount.CompareAndSwap(0, 1) {
   		_, loaded := bps.pageLock.LoadOrStore(pf.pageId.String(), true)
 			if loaded {
@@ -311,6 +304,8 @@ func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
 			return e, pf
 		}
 	}
+
+	common.DPrintf("Unable to find valid page to evict")
 	return nil, nil
 }
 
