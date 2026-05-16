@@ -97,6 +97,8 @@ func (tm *TransactionManager) Commit(txn *TransactionContext) error {
 
 	tm.logManager.WaitUntilFlushed(lsn)
 
+	tm.activeTxns.Delete(txn.ID())
+
 	// Release locks
 	txn.ReleaseAllLocks()
 
@@ -190,6 +192,8 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 	}
 
 	tm.logManager.WaitUntilFlushed(lsn)
+
+	tm.activeTxns.Delete(txn.ID())
 
 	// Release locks
 	txn.ReleaseAllLocks()
