@@ -285,7 +285,7 @@ func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
 
 	for e := bps.oldList.Back(); e != nil; e = e.Prev() {
 		pf := e.Value.(*PageFrame)
-		if pf.LSN() > flushedUntil {
+		if pf.LSN() >= flushedUntil {
 			continue
 		}
 		if pf.refCount.CompareAndSwap(0, 1) {
@@ -299,7 +299,7 @@ func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
 	}
 	for e := bps.youngList.Back(); e != nil; e = e.Prev() {
 		pf := e.Value.(*PageFrame)	
-		if pf.LSN() > flushedUntil {
+		if pf.LSN() >= flushedUntil {
 			continue
 		}
 		if pf.refCount.CompareAndSwap(0, 1) {

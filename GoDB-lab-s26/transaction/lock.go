@@ -380,7 +380,6 @@ func (lm *LockManager) Unlock(tid common.TransactionID, tag DBLockTag) error {
 		}
 	}
 
-
 	return nil
 }
 

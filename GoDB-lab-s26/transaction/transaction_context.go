@@ -1,7 +1,6 @@
 package transaction
 
 import (
-//	"sync"
 	"slices"
 
 	"mit.edu/dsg/godb/common"
@@ -21,10 +20,9 @@ type logRecordBuffer struct {
 
 // newLogRecordBuffer creates a stack with some pre-allocated capacity.
 func newLogRecordBuffer() *logRecordBuffer {
-	// TODO: pre-allocated capacity?
 	s := &logRecordBuffer{
-		buffer: make([]byte, 0, 4),
-		offsets: make([]int, 0, 4),
+		buffer: make([]byte, 0, 64),
+		offsets: make([]int, 0, 64),
 	}
 
 	return s

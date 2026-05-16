@@ -136,8 +136,11 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 		if txn != nil {
 			tag := transaction.NewTupleLockTag(rid)
 			txn.AcquireLock(tag, transaction.LockModeX)		
-			tableHeap.logManager.Append(txn.NewInsertRecord(rid, row))
-			pageFrame.MonotonicallyUpdateLSN(pageFrame.LSN()+1)
+			lsn, err := tableHeap.logManager.Append(txn.NewInsertRecord(rid, row))
+			if err != nil {
+				return rid, nil
+			}
+			pageFrame.MonotonicallyUpdateLSN(lsn)
 		}
 
 		heapPage.MarkAllocated(rid, true)
@@ -179,8 +182,11 @@ func (tableHeap *TableHeap) DeleteTuple(txn *transaction.TransactionContext, rid
 	// 1. appends a LogDelete record
 	// 2. advances the LSN of the page
 	if txn != nil {
-		tableHeap.logManager.Append(txn.NewDeleteRecord(rid))
-		pageFrame.MonotonicallyUpdateLSN(pageFrame.LSN()+1)
+		lsn, err := tableHeap.logManager.Append(txn.NewDeleteRecord(rid))
+		if err != nil {
+			return err
+		}
+		pageFrame.MonotonicallyUpdateLSN(lsn)
 	}
 
 	heapPage.MarkDeleted(rid, true)
@@ -263,8 +269,11 @@ func (tableHeap *TableHeap) UpdateTuple(txn *transaction.TransactionContext, rid
 	// 1. appends a LogUpdate record
 	// 2. advances the LSN of the page
 	if txn != nil {
-		tableHeap.logManager.Append(txn.NewUpdateRecord(rid, tup, updatedTuple))
-		pageFrame.MonotonicallyUpdateLSN(pageFrame.LSN()+1)
+		lsn, err := tableHeap.logManager.Append(txn.NewUpdateRecord(rid, tup, updatedTuple))
+		if err != nil {
+			return err
+		}
+		pageFrame.MonotonicallyUpdateLSN(lsn)
 	}
 
 	copy(tup, updatedTuple)
