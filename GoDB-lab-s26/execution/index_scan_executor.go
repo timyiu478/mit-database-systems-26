@@ -64,6 +64,7 @@ func (e *IndexScanExecutor) Init(ctx *ExecutorContext) error {
 }
 
 func (e *IndexScanExecutor) Next() bool {
+
 	for e.scanIt.Next() {
 		rid := e.scanIt.Value()
 		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
@@ -71,12 +72,16 @@ func (e *IndexScanExecutor) Next() bool {
 		if err == ErrTupleDeleted {
 			continue
 		}
-		// Skips key mismatch
 		key := e.index.Metadata().AsKey(e.buf)
+
+		// Skips key mismatch
 		if !key.Equals(e.scanIt.Key()) {
+			common.DPrintf(fmt.Sprintf("Skipped rid %s because key mismatch, key hash %d, scan key hash %d", rid.String(), key.Hash(), e.scanIt.Key().Hash()))
 			continue
 		}
+
 		e.tup = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
+
 		return true
 	}
 

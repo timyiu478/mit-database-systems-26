@@ -1,6 +1,8 @@
 package execution
 
 import (
+	"fmt"
+
 	"mit.edu/dsg/godb/indexing"
 	"mit.edu/dsg/godb/planner"
 	"mit.edu/dsg/godb/storage"
@@ -66,6 +68,7 @@ func (e *IndexLookupExecutor) Next() bool {
 
 		// Skips stale heap entry
 		if err == ErrTupleDeleted {
+			common.DPrintf(fmt.Sprintf("Skipped rid %s because key is deleted", rid.String()))
 			continue
 		}
 		
@@ -73,6 +76,7 @@ func (e *IndexLookupExecutor) Next() bool {
 
 		// Skips key mismatch
 		if !key.Equals(e.plan.EqualityKey) {
+			common.DPrintf(fmt.Sprintf("Skipped rid %s because key mismatch, key hash %d, equality key hash %d", rid.String(), key.Hash(), e.plan.EqualityKey.Hash()))
 			continue
 		}
 
