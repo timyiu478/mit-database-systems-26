@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"fmt"
 	"slices"
 
 	"mit.edu/dsg/godb/common"
@@ -113,6 +114,13 @@ func (txn *TransactionContext) AcquireLock(tag DBLockTag, mode DBLockMode) error
 	heldMode, loaded := txn.heldLocks[tag]
 	if loaded && txn.lm.IsLockModeCovered(heldMode, mode) {
 		return nil
+	}
+
+	// A Shared Intent Exclusive (SIX) lock is acquired when a transaction holds a Shared (S) lock and subsequently requests an Intent Exclusive (IX) lock on the same resourc
+	// Ref: https://learn.microsoft.com/en-us/answers/questions/154976/mssql-lock-uix-six-siu-example
+	if loaded && ((heldMode == LockModeS && mode == LockModeIX) || (mode == LockModeS && heldMode == LockModeIX)) {
+		common.DPrintf(fmt.Sprintf("Change to requested lock mode from %d to %d", mode, LockModeSIX))
+		mode = LockModeSIX
 	}
 
 	err := txn.lm.Lock(txn.id, tag, mode)
