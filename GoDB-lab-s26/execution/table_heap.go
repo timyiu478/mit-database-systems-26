@@ -146,7 +146,7 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 			if err != nil {
 				pageFrame.PageLatch.Unlock()
 				tableHeap.bufferPool.UnpinPage(pageFrame, isInitedHP == false)
-				return rid, nil
+				return rid, err
 			}
 			pageFrame.MonotonicallyUpdateLSN(lsn)
 		}
@@ -345,7 +345,6 @@ func (tableHeap *TableHeap) Iterator(txn *transaction.TransactionContext, mode t
 	it.tableHeap = tableHeap
 	it.open = false
 	it.txn = txn
-	it.lockMode = mode
 
 	// Make sure numPages > 0
 	sm := tableHeap.bufferPool.StorageManager()
@@ -401,7 +400,6 @@ type TableHeapIterator struct {
 	numPages int
 	open bool
 	txn  *transaction.TransactionContext
-	lockMode transaction.DBLockMode
 }
 
 // IsNil returns true if the TableHeapIterator is the default, uninitialized value
@@ -425,7 +423,7 @@ func (it *TableHeapIterator) Next() bool {
 		if int(it.rid.Slot) >= it.heapPage.NumSlots() {
 			// Release current page
 			it.heapPage.PageFrame.PageLatch.RUnlock()
-			it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, it.lockMode != transaction.LockModeS)
+			it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, false)
 			it.heapPage.PageFrame = nil
 
 			// Check if next page is available
