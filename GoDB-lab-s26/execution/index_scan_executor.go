@@ -55,7 +55,10 @@ func (e *IndexScanExecutor) Init(ctx *ExecutorContext) error {
 			tableLockMode = transaction.LockModeIX
 		}
 		tableTag := transaction.NewTableLockTag(e.plan.TableOid)
-		e.ctx.txn.AcquireLock(tableTag, tableLockMode)
+		if err := e.ctx.txn.AcquireLock(tableTag, tableLockMode); err != nil {
+			common.DPrintf(fmt.Sprintf("Failed to acquired lock on %s with mode %d", tableTag.String(), tableLockMode))
+			return err
+		}
 		common.DPrintf(fmt.Sprintf("Acquired lock on %s with mode %d", tableTag.String(), tableLockMode))
 	}
 	
@@ -70,6 +73,7 @@ func (e *IndexScanExecutor) Next() bool {
 		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
 		// Skips stale heap entry
 		if err == ErrTupleDeleted {
+			common.DPrintf(fmt.Sprintf("Skipped rid %s because stake heap entry", rid.String()))
 			continue
 		}
 		key := e.index.Metadata().AsKey(e.buf)

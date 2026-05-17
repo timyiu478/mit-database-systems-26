@@ -78,7 +78,9 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 
 	// Transaction Hook: acquires IX on the table
 	if txn != nil {
-		txn.AcquireLock(tableHeap.tableTag, transaction.LockModeIX)
+		if err := txn.AcquireLock(tableHeap.tableTag, transaction.LockModeIX); err != nil {
+			return rid, err
+		}
 	}
 
 	for {
@@ -135,7 +137,9 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 		// 3. advances the LSN of the page
 		if txn != nil {
 			tag := transaction.NewTupleLockTag(rid)
-			txn.AcquireLock(tag, transaction.LockModeX)		
+			if err := txn.AcquireLock(tag, transaction.LockModeX); err != nil {
+				return rid, err
+			}
 			lsn, err := tableHeap.logManager.Append(txn.NewInsertRecord(rid, row))
 			if err != nil {
 				return rid, nil
@@ -161,9 +165,13 @@ func (tableHeap *TableHeap) DeleteTuple(txn *transaction.TransactionContext, rid
 	// 1. acquires IX on the table
 	// 2. acquires X on the target slot
 	if txn != nil {
-		txn.AcquireLock(tableHeap.tableTag, transaction.LockModeIX)
+		if err := txn.AcquireLock(tableHeap.tableTag, transaction.LockModeIX); err != nil {
+			return err
+		}
 		tag := transaction.NewTupleLockTag(rid)
-		txn.AcquireLock(tag, transaction.LockModeX)		
+		if err := txn.AcquireLock(tag, transaction.LockModeX); err != nil {
+			return err
+		}
 	}
 
 	pageFrame, err := tableHeap.bufferPool.GetPage(rid.PageID)
@@ -206,9 +214,13 @@ func (tableHeap *TableHeap) ReadTuple(txn *transaction.TransactionContext, rid c
 		tupleLockMode = transaction.LockModeX
 	}
 	if txn != nil {
-		txn.AcquireLock(tableHeap.tableTag, tableLockMode)
+		if err := txn.AcquireLock(tableHeap.tableTag, tableLockMode); err != nil {
+			return err
+		}
 		tag := transaction.NewTupleLockTag(rid)
-		txn.AcquireLock(tag, tupleLockMode)
+		if err := txn.AcquireLock(tag, tupleLockMode); err != nil {
+			return err
+		}
 	}
 
 	pageFrame, err := tableHeap.bufferPool.GetPage(rid.PageID)
@@ -246,9 +258,13 @@ func (tableHeap *TableHeap) ReadTuple(txn *transaction.TransactionContext, rid c
 func (tableHeap *TableHeap) UpdateTuple(txn *transaction.TransactionContext, rid common.RecordID, updatedTuple storage.RawTuple) error {
 	// Transaction Hooks: acquires IX on the table -> acquires X on the target slot
 	if txn != nil {
-		txn.AcquireLock(tableHeap.tableTag, transaction.LockModeIX)
+		if err := txn.AcquireLock(tableHeap.tableTag, transaction.LockModeIX); err != nil {
+			return err
+		}
 		tag := transaction.NewTupleLockTag(rid)
-		txn.AcquireLock(tag, transaction.LockModeX)
+		if err := txn.AcquireLock(tag, transaction.LockModeX); err != nil {
+			return err
+		}
 	}
 
 	pageFrame, err := tableHeap.bufferPool.GetPage(rid.PageID)
@@ -338,7 +354,9 @@ func (tableHeap *TableHeap) Iterator(txn *transaction.TransactionContext, mode t
 
 	// Transaction Hook: acquires mode on the table
 	if txn != nil {
-		txn.AcquireLock(tableHeap.tableTag, mode)
+		if err := txn.AcquireLock(tableHeap.tableTag, mode); err != nil {
+			return it, err
+		}
 	}
 
 	pageFrame, err := tableHeap.bufferPool.GetPage(it.rid.PageID)
@@ -374,6 +392,9 @@ type TableHeapIterator struct {
 
 // IsNil returns true if the TableHeapIterator is the default, uninitialized value
 func (it *TableHeapIterator) IsNil() bool {
+	if it == nil {
+		return true
+	}
 	return it.rid.PageID.Oid == common.InvalidObjectID
 }
 
