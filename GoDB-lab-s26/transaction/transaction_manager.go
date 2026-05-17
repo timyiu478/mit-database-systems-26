@@ -83,13 +83,12 @@ func (tm *TransactionManager) Begin() (*TransactionContext, error) {
 
 // Commit completes a transaction and makes its effects durable and visible.
 func (tm *TransactionManager) Commit(txn *TransactionContext) error {
+	common.DPrintf(fmt.Sprintf("Committing transaction %d\n", txn.ID()))
 
 	// Execute In-Memory changes (Indexes) after flushed. Think about how this should interleave with the commit logic.
 	for _, task := range txn.commitActions {
 		task.Target.Invoke(task.Type, task.Key, task.RID)
 	}
-
-	common.DPrintf(fmt.Sprintf("Committing transaction %d\n", txn.ID()))
 
 	lsn, err := tm.logManager.Append(txn.NewCommitRecord())
 
@@ -117,6 +116,8 @@ func (tm *TransactionManager) Commit(txn *TransactionContext) error {
 
 // Abort stops a transaction and ensures its effects are rolled back
 func (tm *TransactionManager) Abort(txn *TransactionContext) error {
+	common.DPrintf(fmt.Sprintf("Aborting transaction %d\n", txn.ID()))
+
 	// Rollback In-Memory changes (Indexes)
 	// YOU SHOULD NOT NEED TO MODIFY THIS LOGIC
 	for i := len(txn.abortActions) - 1; i >= 0; i-- {
@@ -124,7 +125,6 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 		cleanupTask.Target.Invoke(cleanupTask.Type, cleanupTask.Key, cleanupTask.RID)
 	}
 
-	common.DPrintf(fmt.Sprintf("Aborting transaction %d\n", txn.ID()))
 
 	// Rollback changes in LIFO order (Pages)
 	numRecords := txn.logRecords.len()
@@ -178,7 +178,7 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 				return err
 			}
 			rid := clr.RID()
-			afterImage := clr.AfterImage()
+			afterImage := clr.AfterImage() // The BeforeImage of the original update is the AfterImage of the CLR
 			pf, err = tm.bufferPool.GetPage(rid.PageID)
 			if err != nil {
 				return err
