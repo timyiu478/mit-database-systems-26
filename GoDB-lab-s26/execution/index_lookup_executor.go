@@ -63,6 +63,7 @@ func (e *IndexLookupExecutor) Next() bool {
 		rid := e.rids[e.cursor]
 		buf := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
 		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, buf, e.plan.ForUpdate)
+		e.tuple = storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
 
 		e.cursor++
 
@@ -72,7 +73,17 @@ func (e *IndexLookupExecutor) Next() bool {
 			continue
 		}
 		
-		key := e.index.Metadata().AsKey(buf)
+		ks := e.index.Metadata().KeySchema
+		pl := e.index.Metadata().ProjectionList
+		vals := make([]common.Value, ks.NumColumns())
+		for i := 0; i < ks.NumColumns(); i++ {
+			vals[i] = e.tuple.GetValue(pl[i])
+		}
+		keyTuple := storage.FromValues()
+		keyTuple = keyTuple.Extend(vals)
+		rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
+		keyTuple.WriteToBuffer(rawKeyTuple, ks)
+		key := e.index.Metadata().AsKey(rawKeyTuple)
 
 		// Skips key mismatch
 		if !key.Equals(e.plan.EqualityKey) {
@@ -80,7 +91,6 @@ func (e *IndexLookupExecutor) Next() bool {
 			continue
 		}
 
-		e.tuple = storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
 
 		return true
 	}

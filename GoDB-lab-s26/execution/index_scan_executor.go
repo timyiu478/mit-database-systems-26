@@ -71,12 +71,25 @@ func (e *IndexScanExecutor) Next() bool {
 	for e.scanIt.Next() {
 		rid := e.scanIt.Value()
 		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
+		e.tup = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
+
 		// Skips stale heap entry
 		if err == ErrTupleDeleted {
 			common.DPrintf(fmt.Sprintf("Skipped rid %s because stake heap entry", rid.String()))
 			continue
 		}
-		key := e.index.Metadata().AsKey(e.buf)
+
+		ks := e.index.Metadata().KeySchema
+		pl := e.index.Metadata().ProjectionList
+		vals := make([]common.Value, ks.NumColumns())
+		for i := 0; i < ks.NumColumns(); i++ {
+			vals[i] = e.tup.GetValue(pl[i])
+		}
+		keyTuple := storage.FromValues()
+		keyTuple = keyTuple.Extend(vals)
+		rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
+		keyTuple.WriteToBuffer(rawKeyTuple, ks)
+		key := e.index.Metadata().AsKey(rawKeyTuple)
 
 		// Skips key mismatch
 		if !key.Equals(e.scanIt.Key()) {
@@ -84,7 +97,6 @@ func (e *IndexScanExecutor) Next() bool {
 			continue
 		}
 
-		e.tup = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
 
 		return true
 	}
