@@ -139,11 +139,13 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 			tag := transaction.NewTupleLockTag(rid)
 			if err := txn.AcquireLock(tag, transaction.LockModeX); err != nil {
 				pageFrame.PageLatch.Unlock()
+				tableHeap.bufferPool.UnpinPage(pageFrame, isInitedHP == false)
 				return rid, err
 			}
 			lsn, err := tableHeap.logManager.Append(txn.NewInsertRecord(rid, row))
 			if err != nil {
 				pageFrame.PageLatch.Unlock()
+				tableHeap.bufferPool.UnpinPage(pageFrame, isInitedHP == false)
 				return rid, nil
 			}
 			pageFrame.MonotonicallyUpdateLSN(lsn)
@@ -195,6 +197,7 @@ func (tableHeap *TableHeap) DeleteTuple(txn *transaction.TransactionContext, rid
 		lsn, err := tableHeap.logManager.Append(txn.NewDeleteRecord(rid))
 		if err != nil {
 			pageFrame.PageLatch.Unlock()
+			tableHeap.bufferPool.UnpinPage(pageFrame, false)
 			return err
 		}
 		pageFrame.MonotonicallyUpdateLSN(lsn)
@@ -291,6 +294,7 @@ func (tableHeap *TableHeap) UpdateTuple(txn *transaction.TransactionContext, rid
 		lsn, err := tableHeap.logManager.Append(txn.NewUpdateRecord(rid, tup, updatedTuple))
 		if err != nil {
 			pageFrame.PageLatch.Unlock()
+			tableHeap.bufferPool.UnpinPage(pageFrame, false)
 			return err
 		}
 		pageFrame.MonotonicallyUpdateLSN(lsn)
@@ -421,7 +425,7 @@ func (it *TableHeapIterator) Next() bool {
 		if int(it.rid.Slot) >= it.heapPage.NumSlots() {
 			// Release current page
 			it.heapPage.PageFrame.PageLatch.RUnlock()
-			it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, false)
+			it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, it.lockMode != transaction.LockModeS)
 			it.heapPage.PageFrame = nil
 
 			// Check if next page is available
@@ -451,15 +455,6 @@ func (it *TableHeapIterator) Next() bool {
 
 		if !it.heapPage.IsAllocated(it.rid) || it.heapPage.IsDeleted(it.rid) {
 			continue
-		}
-
-		// Transaction Hook: acquire X on the tuple when table lock mode is SIX
-		if it.lockMode == transaction.LockModeSIX {
-			tag := transaction.NewTupleLockTag(it.rid)
-			if err := it.txn.AcquireLock(tag, transaction.LockModeX); err != nil {
-				it.err = err
-				return false
-			}
 		}
 
 		it.buffer = it.heapPage.AccessTuple(it.rid)
