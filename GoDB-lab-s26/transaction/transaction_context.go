@@ -147,8 +147,17 @@ func (txn *TransactionContext) HeldLock(tag DBLockTag) (DBLockMode, bool) {
 // ReleaseAllLocks releases all locks held by this transaction.
 // This is typically called during the Commit or Abort phase of the transaction lifecycle.
 func (txn *TransactionContext) ReleaseAllLocks() {
+	// 1. release tuple-level locks
 	for tag, _ := range txn.heldLocks {
-		txn.lm.Unlock(txn.id, tag)
+		if !tag.IsTableTag() {
+			txn.lm.Unlock(txn.id, tag)
+		}
+	}
+	// 2. release table-level locks
+	for tag, _ := range txn.heldLocks {
+		if tag.IsTableTag() {
+			txn.lm.Unlock(txn.id, tag)
+		}
 	}
 }
 

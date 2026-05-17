@@ -86,23 +86,17 @@ func (m DBLockMode) String() string {
 type LockRequest struct {
 	tid common.TransactionID
 	tag  DBLockTag
-	child DBLockTag
 	mode DBLockMode
 	tcb  *TransactionControlBlock
 	lcb  *LockControlBlock
 	waitCh  chan error
-	explicit bool
-	hasChild bool
 }
 
 type UnlockRequest struct {
 	tid common.TransactionID
 	tag  DBLockTag
-	child DBLockTag
 	tcb  *TransactionControlBlock
 	lcb  *LockControlBlock
-	explicit bool
-	hasChild bool
 }
 
 type TransactionControlBlock struct {
@@ -113,8 +107,6 @@ type TransactionControlBlock struct {
 }
 
 type HoldInfo struct {
-	explicit bool               // Did the user call Lock?
-	childs   map[DBLockTag]bool // Which TupleTags are using this Table lock?
 	mode     DBLockMode
 }
 
@@ -123,25 +115,6 @@ type LockControlBlock struct {
 	tag     		DBLockTag
 	holders 	  map[common.TransactionID]*HoldInfo
 	waiters     []*LockRequest // Ordered slice for FIFO
-}
-
-func (lm *LockManager) getInCompatiableHolders(tid common.TransactionID, mode DBLockMode, lcb *LockControlBlock) []common.TransactionID {
-	lcb.mu.Lock()
-	defer lcb.mu.Unlock()
-
-	common.DPrintf(fmt.Sprintf("Obtaining holders of tag %s", lcb.tag.String()))
-
-	holders := make([]common.TransactionID, 0)
-	for h, info := range lcb.holders {
-		if h == tid {
-			continue
-		}
-		if lm.compatibility[mode][info.mode] {
-			continue
-		}
-		holders = append(holders, h)
-	}
-	return holders
 }
 
 // LockManager manages the granting, releasing, and waiting of locks on database resources.
@@ -235,78 +208,28 @@ func (lm *LockManager) Lock(tid common.TransactionID, tag DBLockTag, mode DBLock
 		time.Sleep(time.Duration(backOff) * time.Microsecond)
 	}
 
-	// Lock path: Table -> Tuple
-	lockRequests := make([]*LockRequest, 0)
-
-	// Create table lock request if tag is not table-level tag
-	if !tag.IsTableTag() {
-		var tableLockMode DBLockMode
-		if int(mode) == int(LockModeS) {
-			tableLockMode = LockModeIS
-		} else if int(mode) == int(LockModeX) {
-			tableLockMode = LockModeIX
-		} else {
-			panic("Invalid tuple tag lock mode")
-		}
-
-		tableTag := NewTableLockTag(tag.Oid)
-		tableLCB := lm.loadOrStoreLCB(tableTag)
-
-		lockRequests = append(lockRequests, &LockRequest{
-			tid: tid,
-			tag: tableTag,
-			child: tag,
-			mode: tableLockMode,
-			waitCh: make(chan error, 1),
-			tcb: tcb,
-			lcb: tableLCB,
-			explicit: false,
-			hasChild: true,
-		})
-	}
-
-	// Create table-level/tuple-level lock request
+	// Create lock request
 	lcb := lm.loadOrStoreLCB(tag)
 
-	lockRequests = append(lockRequests, &LockRequest{
+	lr := &LockRequest{
 		tid: tid,
 		tag: tag,
 		mode: mode,
 		waitCh: make(chan error, 1),
 		tcb: tcb,
 		lcb: lcb,
-		explicit: true,
-		hasChild: false,
-	})
+	}
 
-	// Lock DB tags
-	for i, lr := range lockRequests {
-		err := lm.lock(lr)
-		if err != nil {
-			// Assume 2 level hierarchy
-			if i == 1 {
-				common.DPrintf("Rollback table tag %s intent lock of tid %d", lockRequests[0].tag.String(), tid)
-				ulr := &UnlockRequest{
-					tid: tid,
-					tag: lockRequests[0].tag,
-					child: tag,
-					tcb: tcb,
-					lcb: lockRequests[0].lcb,
-					explicit: false,
-					hasChild: true,
-				}
-				lm.unlock(ulr)
-			}
+	err := lm.lock(lr)
 
-			// Increase backoff time
-			if backOff == 0 {
-				tcb.backOff.Store(10)
-			} else {
-				tcb.backOff.Store(backOff * 2)
-			}
-
-			return err
+	if err != nil {
+		// Increase backoff time
+		if backOff == 0 {
+			tcb.backOff.Store(10)
+		} else {
+			tcb.backOff.Store(backOff * 2)
 		}
+		return err
 	}
 
 	return nil
@@ -322,62 +245,20 @@ func (lm *LockManager) Unlock(tid common.TransactionID, tag DBLockTag) error {
 	}
 	defer lm.delInactiveTCB(tcb)
 
-	// Lock path: Tuple -> Table
-	unlockRequests := make([]*UnlockRequest, 0)
-
-	// Create unlock requests
-	if tag.IsTableTag() {
-		tableTagLCB := lm.loadLCB(tag)
-		if tableTagLCB == nil {
-			return common.GoDBError{Code: common.LockNotFoundError}
-		}
-
-		unlockRequests = append(unlockRequests, &UnlockRequest{
-			tid: tid,
-			tag: tag,
-			tcb: tcb,
-			lcb: tableTagLCB,	
-			explicit: true,
-			hasChild: false,
-		})
-	} else {
-		lcb := lm.loadLCB(tag)
-		if lcb == nil {
-			return common.GoDBError{Code: common.LockNotFoundError}
-		}
-
-		tableTag := NewTableLockTag(tag.Oid)
-		tableTagLCB := lm.loadLCB(tableTag)
-		common.Assert(tableTagLCB != nil, "Unable to find the table tag lock from tuple tag")
-
-		unlockRequests = append(unlockRequests, &UnlockRequest{
-			tid: tid,
-			tag: tag,
-			tcb: tcb,
-			lcb: lcb,	
-			explicit: true,
-			hasChild: false,
-		})
-
-		unlockRequests = append(unlockRequests, &UnlockRequest{
-			tid: tid,
-			tag: tableTag,
-			child: tag,
-			tcb: tcb,
-			lcb: tableTagLCB,	
-			explicit: false,
-			hasChild: true,
-		})
+	lcb := lm.loadLCB(tag)
+	if lcb == nil {
+		return common.GoDBError{Code: common.LockNotFoundError}
 	}
 
-	// Unlock tags
-	for i, ulr := range unlockRequests {
-		if err := lm.unlock(ulr); err != nil {
-			if i > 0 {
-				panic("unlockRequests[i] should not return err when i > 0")
-			}
-			return err
-		}
+	ulr := &UnlockRequest{
+		tid: tid,
+		tag: tag,
+		tcb: tcb,
+		lcb: lcb,	
+	}
+
+	if err := lm.unlock(ulr); err != nil {
+		return err
 	}
 
 	return nil
@@ -413,14 +294,6 @@ func (lm *LockManager) lock(lr *LockRequest) error {
 
 	// Check if Transaction already holds the lock and the new lock request mode is covered
 	if loaded && lm.IsLockModeCovered(holdInfo.mode, lr.mode) {
-		// Add child
-		if lr.hasChild {
-			holdInfo.childs[lr.child] = true
-		}
-		if lr.explicit {
-			holdInfo.explicit = true
-		}
-
 		lcb.mu.Unlock()
 		
 		common.DPrintf(fmt.Sprintf("Tid %d is covered the lock request", lr.tid))
@@ -433,19 +306,9 @@ func (lm *LockManager) lock(lr *LockRequest) error {
 	if len(lcb.waiters) == 0 && lm.isLockModeCompatible(lr, lcb) {
 		holdInfo, loaded := lcb.holders[lr.tid]
 		if !loaded {
-			holdInfo = &HoldInfo{
-				childs: make(map[DBLockTag]bool),
-			}
+			holdInfo = &HoldInfo{}
 			lcb.holders[lr.tid] = holdInfo
 			tcb.lockCount.Add(1)
-		}
-		// Add child
-		if lr.hasChild {
-			holdInfo.childs[lr.child] = true
-		}
-		// Mark the lock request is generated by user
-		if lr.explicit {
-			holdInfo.explicit = true
 		}
 		// Grant/upgrade lock 
 		holdInfo.mode = lr.mode
@@ -527,19 +390,6 @@ func (lm *LockManager) unlock(ulr *UnlockRequest) error {
 
 	if !loadedHoldInfo {
 		return common.GoDBError{Code: common.LockNotFoundError}
-	}
-
-	// Remove child
-	if ulr.hasChild {
-		delete(holdInfo.childs, ulr.child)
-	}
-	// Is user explicitly unlock?
-	if ulr.explicit {
-		holdInfo.explicit = false
-	}
-
-	if len(holdInfo.childs) > 0 || holdInfo.explicit {
-		return nil
 	}
 
 	delete(lcb.holders, ulr.tid)
@@ -801,9 +651,7 @@ func (lm *LockManager) wakeUpCompatibleWaiters(lcb *LockControlBlock) {
 		} else if isCompatible {
 			// change waiter to holder
 			if !loadedHoldInfo {
-				holdInfo = &HoldInfo{
-					childs: make(map[DBLockTag]bool),
-				}
+				holdInfo = &HoldInfo{}
 				lcb.holders[waiter.tid] = holdInfo
 				waiter.tcb.lockCount.Add(1)
 			}
@@ -813,13 +661,6 @@ func (lm *LockManager) wakeUpCompatibleWaiters(lcb *LockControlBlock) {
 		}
 
 		if isCovered || isCompatible {
-			if waiter.hasChild {
-				holdInfo.childs[waiter.child] = true
-			}
-			if waiter.explicit {
-				holdInfo.explicit = true
-			}
-
 			lm.graphMu.Lock()
 			delete(lm.waitGraph, waiter.tid)
 			lm.graphMu.Unlock()
