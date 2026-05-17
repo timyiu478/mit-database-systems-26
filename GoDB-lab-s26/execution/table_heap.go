@@ -138,10 +138,12 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 		if txn != nil {
 			tag := transaction.NewTupleLockTag(rid)
 			if err := txn.AcquireLock(tag, transaction.LockModeX); err != nil {
+				pageFrame.PageLatch.Unlock()
 				return rid, err
 			}
 			lsn, err := tableHeap.logManager.Append(txn.NewInsertRecord(rid, row))
 			if err != nil {
+				pageFrame.PageLatch.Unlock()
 				return rid, nil
 			}
 			pageFrame.MonotonicallyUpdateLSN(lsn)
@@ -192,6 +194,7 @@ func (tableHeap *TableHeap) DeleteTuple(txn *transaction.TransactionContext, rid
 	if txn != nil {
 		lsn, err := tableHeap.logManager.Append(txn.NewDeleteRecord(rid))
 		if err != nil {
+			pageFrame.PageLatch.Unlock()
 			return err
 		}
 		pageFrame.MonotonicallyUpdateLSN(lsn)
@@ -287,6 +290,7 @@ func (tableHeap *TableHeap) UpdateTuple(txn *transaction.TransactionContext, rid
 	if txn != nil {
 		lsn, err := tableHeap.logManager.Append(txn.NewUpdateRecord(rid, tup, updatedTuple))
 		if err != nil {
+			pageFrame.PageLatch.Unlock()
 			return err
 		}
 		pageFrame.MonotonicallyUpdateLSN(lsn)
