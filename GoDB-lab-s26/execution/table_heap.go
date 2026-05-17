@@ -330,6 +330,8 @@ func (tableHeap *TableHeap) VacuumPage(pageID common.PageID) error {
 // Iterator creates a new TableHeapIterator to scan the table. It acquires the supplied lock on the table (S, X, or SIX),
 // and uses the supplied byte slice to fetch tuples in the returned iterator (for zero-allocation scanning).
 func (tableHeap *TableHeap) Iterator(txn *transaction.TransactionContext, mode transaction.DBLockMode, buffer []byte) (TableHeapIterator, error) {
+	common.Assert(mode == transaction.LockModeS || mode == transaction.LockModeSIX || mode == transaction.LockModeX, "Invalid lock mode for table heap iterator")
+
 	it := TableHeapIterator{}
 	it.numPages = -1
 	it.err = nil
@@ -338,6 +340,8 @@ func (tableHeap *TableHeap) Iterator(txn *transaction.TransactionContext, mode t
 	it.rid.Slot = -1
 	it.tableHeap = tableHeap
 	it.open = false
+	it.txn = txn
+	it.lockMode = mode
 
 	// Make sure numPages > 0
 	sm := tableHeap.bufferPool.StorageManager()
@@ -392,6 +396,8 @@ type TableHeapIterator struct {
 	buffer []byte
 	numPages int
 	open bool
+	txn  *transaction.TransactionContext
+	lockMode transaction.DBLockMode
 }
 
 // IsNil returns true if the TableHeapIterator is the default, uninitialized value
@@ -445,6 +451,15 @@ func (it *TableHeapIterator) Next() bool {
 
 		if !it.heapPage.IsAllocated(it.rid) || it.heapPage.IsDeleted(it.rid) {
 			continue
+		}
+
+		// Transaction Hook: acquire X on the tuple when table lock mode is SIX
+		if it.lockMode == transaction.LockModeSIX {
+			tag := transaction.NewTupleLockTag(it.rid)
+			if err := it.txn.AcquireLock(tag, transaction.LockModeX); err != nil {
+				it.err = err
+				return false
+			}
 		}
 
 		it.buffer = it.heapPage.AccessTuple(it.rid)
