@@ -72,26 +72,7 @@ func (e *UpdateExecutor) Next() bool {
 	}
 
 	for _, tuple := range tuplesTobeUpdated {
-		// delete old index key
-		for _, index := range e.indexes {
-			ks := index.Metadata().KeySchema
-			pl := index.Metadata().ProjectionList
-
-			vals := make([]common.Value, ks.NumColumns())	
-			for i := 0; i < ks.NumColumns(); i++ {
-				vals[i] = tuple.GetValue(pl[i])
-			}
-			keyTuple := storage.FromValues().Extend(vals)
-			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
-			keyTuple.WriteToBuffer(rawKeyTuple, ks)
-			key := index.Metadata().AsKey(rawKeyTuple)
-			e.err = index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
-			if e.err != nil {
-				return false
-			}
-		}
-
-		// update tuple
+		// Update tuple
 		vals := make([]common.Value, len(e.plan.Expressions))	
 		for i, expr := range e.plan.Expressions {
 			vals[i] = expr.Eval(tuple)
@@ -105,10 +86,22 @@ func (e *UpdateExecutor) Next() bool {
 			return false
 		}
 
-		// insert new index key
+		// Delete old index key & insert new index key
+		// if old index key != new index key
+		// Noted that the DeleteEntry tasks are defered until commit
 		for _, index := range e.indexes {
 			ks := index.Metadata().KeySchema
 			pl := index.Metadata().ProjectionList
+
+			vals := make([]common.Value, ks.NumColumns())
+			for i := 0; i < ks.NumColumns(); i++ {
+				vals[i] = tuple.GetValue(pl[i])
+			}
+			keyTuple := storage.FromValues().Extend(vals)
+			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
+			keyTuple.WriteToBuffer(rawKeyTuple, ks)
+			key := index.Metadata().AsKey(rawKeyTuple)
+
 			updatedVals := make([]common.Value, ks.NumColumns())	
 			for i := 0; i < ks.NumColumns(); i++ {
 				updatedVals[i] = updatedTuple.GetValue(pl[i])
@@ -117,6 +110,15 @@ func (e *UpdateExecutor) Next() bool {
 			upRawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
 			upKeyTuple.WriteToBuffer(upRawKeyTuple, ks)
 			upKey := index.Metadata().AsKey(upRawKeyTuple)
+
+			if key.Equals(upKey) {
+				continue
+			}
+
+			e.err = index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
+			if e.err != nil {
+				return false
+			}
 			e.err = index.InsertEntry(upKey, tuple.RID(), e.ctx.txn)
 			if e.err != nil {
 				return false
