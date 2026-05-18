@@ -20,7 +20,6 @@ type IndexLookupExecutor struct {
 	rids      []common.RecordID
 	err       error
 	tuple     storage.Tuple
-	scanned   bool
 	cursor    int
 	buf       storage.RawTuple
 }
@@ -30,9 +29,9 @@ func NewIndexLookupExecutor(plan *planner.IndexLookupNode, index indexing.Index,
 		plan: plan,
 		tableHeap: tableHeap,
 		index: index,
-		scanned: false,
 		cursor: 0,
 		buf: make(storage.RawTuple, tableHeap.StorageSchema().BytesPerTuple()),
+		rids: make([]common.RecordID, 0),
 	}
 
 	return e
@@ -45,36 +44,38 @@ func (e *IndexLookupExecutor) PlanNode() planner.PlanNode {
 func (e *IndexLookupExecutor) Init(ctx *ExecutorContext) error {
 	e.ctx = ctx
 
+	e.rids, e.err = e.index.ScanKey(e.plan.EqualityKey, e.rids, e.ctx.txn)
+
+	if e.err != nil {
+		return e.err
+	}
+
+	if e.ctx.txn != nil {
+		common.DPrintf(fmt.Sprintf("Index Lookup Executor is inited for tid-%d, len(e.rids)=%d", e.ctx.txn.ID(), len(e.rids)))
+	}
+
 	return nil
 }
 
 func (e *IndexLookupExecutor) Next() bool {
-	if e.err != nil || e.scanned && e.cursor >= len(e.rids) {
+	if e.err != nil || e.cursor >= len(e.rids) {
 		return false
-	}
-
-	if !e.scanned {
-		e.rids, e.err = e.index.ScanKey(e.plan.EqualityKey, e.rids, e.ctx.txn)
-		if e.err != nil || len(e.rids) == 0 {
-			return false
-		}
-		e.scanned = true
 	}
 
 	for e.cursor < len(e.rids) {
 		rid := e.rids[e.cursor]
 		e.err = e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
-		e.tuple = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
-
 		e.cursor++
 
 		// Skips stale heap entry
 		if e.err == ErrTupleDeleted {
-			common.DPrintf(fmt.Sprintf("Skipped rid %s because key is deleted", rid.String()))
+			common.DPrintf(fmt.Sprintf("Skipped rid %s because key is deleted, tid-%d", rid.String(), e.ctx.txn.ID()))
 			continue
 		} else if e.err != nil { // Probably txn deadlock error
 			return false
 		}
+
+		e.tuple = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
 		
 		ks := e.index.Metadata().KeySchema
 		pl := e.index.Metadata().ProjectionList
@@ -90,7 +91,7 @@ func (e *IndexLookupExecutor) Next() bool {
 
 		// Skips key mismatch
 		if !key.Equals(e.plan.EqualityKey) {
-			common.DPrintf(fmt.Sprintf("Skipped rid %s because key mismatch, key hash %d, equality key hash %d", rid.String(), key.Hash(), e.plan.EqualityKey.Hash()))
+			common.DPrintf(fmt.Sprintf("Skipped rid %s because key mismatch, key hash %d, equality key hash %d, tid-%d", rid.String(), key.Hash(), e.plan.EqualityKey.Hash(), e.ctx.txn.ID()))
 			continue
 		}
 
@@ -106,6 +107,7 @@ func (e *IndexLookupExecutor) Current() storage.Tuple {
 
 func (e *IndexLookupExecutor) Close() error {
 	e.buf = nil
+	e.rids = nil
 	return nil
 }
 

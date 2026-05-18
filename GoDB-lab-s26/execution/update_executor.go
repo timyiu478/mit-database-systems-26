@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"fmt"
 	"mit.edu/dsg/godb/common"
 	"mit.edu/dsg/godb/indexing"
 	"mit.edu/dsg/godb/planner"
@@ -42,7 +43,13 @@ func (e *UpdateExecutor) PlanNode() planner.PlanNode {
 
 func (e *UpdateExecutor) Init(ctx *ExecutorContext) error {
 	e.ctx = ctx
-	return e.child.Init(ctx)
+	e.err = e.child.Init(ctx)
+
+	if e.ctx.txn != nil {
+		common.DPrintf(fmt.Sprintf("Update Executor is inited for tid-%d", e.ctx.txn.ID()))
+	}
+
+	return e.err
 }
 
 func (e *UpdateExecutor) Next() bool {

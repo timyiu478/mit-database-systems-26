@@ -42,11 +42,16 @@ func (e *IndexScanExecutor) Init(ctx *ExecutorContext) error {
 
 	it, err := e.index.Scan(e.plan.StartKey, e.plan.Direction, e.ctx.txn)
 	if err != nil {
+		e.err = err
 		return err
 	}
 	e.scanIt = it
 
 	e.buf = make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
+
+	if e.ctx.txn != nil {
+		common.DPrintf(fmt.Sprintf("Index Scan Executor is inited for tid-%d", e.ctx.txn.ID()))
+	}
 
 	return nil
 }
