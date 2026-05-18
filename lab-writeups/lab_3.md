@@ -9,6 +9,7 @@ See [../GoDB-lab-s26/lab3.md](../GoDB-lab-s26/lab3.md)
 * Lock Manager: https://drive.google.com/file/d/1cH0q4HMUfFC6WiDaFmmEtJhCHVUZXdQN/view
 * Transaction Context: https://drive.google.com/file/d/18By0w95j6aLh2Patea_4bJdBdLovJA41/view
 * Execution Engine Integration: https://drive.google.com/file/d/1ZOCJm3ZWMTd3EVFwDLycfGKzKBKIOSDC/view
+* End-to-end stress tests covering WAL durability, concurrent transactions, abort storms, and YCSB workloads: https://drive.google.com/file/d/1ZSK2cVp8Oz1yCEehxtKI5Ur6ufiQx1xo/view
 
 ## Related Source Code
 
@@ -52,7 +53,6 @@ Key Assumptions and Guardrails
 Problems:
 
 * Use a single global mutex to protect the lock table. Possible Improvement: Lock table sharding.
-* Treat "Deadlock Detection" as a global synchronous event. No lock or unlock operations can be performed when deadlock detection is travelling the Wait-For graph. Possible Improvement: use Wait-Die/Would-Wait deadlock prevention strategy.
 
 ## Implementation Challenges
 
