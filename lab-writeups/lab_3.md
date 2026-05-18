@@ -54,18 +54,6 @@ Problems:
 * Use a single global mutex to protect the lock table. Possible Improvement: Lock table sharding.
 * Treat "Deadlock Detection" as a global synchronous event. No lock or unlock operations can be performed when deadlock detection is travelling the Wait-For graph. Possible Improvement: use Wait-Die/Would-Wait deadlock prevention strategy.
 
-### Execution Engine Integration
-
-#### Prevents WAL violation
-
-A dirty page may only be written to stable storage (the database file) once all log records describing modifications to that page have been flushed to stable storage (the log file). This fundamental safety requirement is expressed by the inequality: $\text{PageLSN} < \text{FlushedLSN}$.
-
-In our current implementation, the Buffer Pool triggers eviction logic only when it has exhausted all empty frames. During the [victim selection](https://github.com/timyiu478/mit-database-systems/blob/cbc5d0c2bdf329fb902a70feba63c7a2a992b23b/GoDB-lab-s26/storage/buffer_pool.go#L279-L315) process, a page is considered a valid candidate for eviction only if it satisfies a specific WAL criterion: its PageLSN must be less than or equal to the current FlushedLSN of the Log Manager.
-
-Problems:
-
-* Buffer Pool Starvation: Even if many page frames have a reference count of zero (meaning they are technically unpinned), the system may fail to find a valid eviction victim if every candidate contains "unflushed" changes ($\text{PageLSN} >= \text{FlushedLSN}$).
-
 ## Implementation Challenges
 
 ### Lock Manager
@@ -158,6 +146,17 @@ func (lm *LockManager) isLockModeCovered(mode1 DBLockMode, mode2 DBLockMode) boo
 }
 ```
 
+Noted that when a transaction already have an S(IX) lock on it, and then it needs an IX(S) lock. The transaction context will change to the requested lock mode to SIX.
+
+```go
+// A Shared Intent Exclusive (SIX) lock is acquired when a transaction holds a Shared (S) lock and subsequently requests an Intent Exclusive (IX) lock on the same resourc
+// Ref: https://learn.microsoft.com/en-us/answers/questions/154976/mssql-lock-uix-six-siu-example
+if loaded && ((heldMode == LockModeS && mode == LockModeIX) || (mode == LockModeS && heldMode == LockModeIX)) {
+    common.DPrintf(fmt.Sprintf("Change to requested lock mode from %d to %d", mode, LockModeSIX))
+    mode = LockModeSIX
+}
+```
+
 #### 6. The Deadlock Resolution Wake-up Bug
 
 Lets consider this scenario:
@@ -185,6 +184,53 @@ Table A:
 ```
 
 Although T3 and T4 are now compatible with the current holder (T1), they remain asleep. In the original logic, the "Wake-up" signal is only triggered by an explicit Unlock() call. Since the victim (T2) was removed by the deadlock resolver rather than a standard unlock, and the remaining holder (T1) is still blocked elsewhere, no signal is ever sent. T3 and T4 become "Orphaned Waiters," blocked indefinitely.
+
+### Strict Two Phrase Locking
+
+#### 1. The "Deferred Delete" Ghosting Bug
+
+When running the TestConcurrent_Bank concurrency end-to-end workload, the test suite consistently failed with a missing key panic during point lookup queries, despite the workload containing absolutely no explicit DELETE SQL commands.
+
+```
+=== RUN   TestConcurrent_Bank
+        Error Trace: /Users/timyiu/mit-database-systems/GoDB-lab-s26/large_transaction_test.go:542
+                    /usr/local/go/src/runtime/asm_amd64.s:1693
+        Error:      "[]" should have 1 item(s), but has 0
+        Test:        TestConcurrent_Bank
+        Messages:    IS → S scanner: key 7 not found
+```
+
+In the original, flawed [UpdateExecutor::Next()](https://github.com/timyiu478/mit-database-systems/blob/2ef99ee012023814f0233cbf1f5c3e3764b3a037/GoDB-lab-s26/execution/update_executor.go#L67-L125) implementation, an update operation was unconditionally simulated by:
+
+1. Stage a deletion of the old index entry via index.DeleteEntry().
+2. Modify the underlying tuple in the TableHeap in-place.
+3. Immediately write a new index entry via index.InsertEntry().
+
+However, **the index deletions are deferred until the transaction explicitly commits**. This behavior creates a catastrophic lifecycle sequence when a bulk query like `UPDATE kv SET v = v + %d` updates the value column v while leaving the indexed key column k **completely unchanged**:
+
+1. Staged Delete: The executor calls index.DeleteEntry(k=7). Because deletion is deferred to ensure structural lock-safety during transaction runtime, a removal task is appended to txn.commitActions.
+2. Heap Mutation: The table heap modifies the record's value in-place.
+3. Immediate Insert: The executor calls index.InsertEntry(k=7). The index processes this insertion immediately.
+4. Commit Phase Sequence: When TransactionManager.Commit() is called, it processes the deferred action queue sequentially.
+5. The Wipeout: The deferred deletion for k=7 executes after the insertion, wiping out the very index entry that the executor just re-inserted.
+
+Consequently, when a subsequent IS → S scanner attempts an index lookup for k=7, the index returns zero record identifiers (RIDs) for that key, despite the data physically residing in the heap.
+
+
+The Fix: Comparing the old index key to the new index key, and only calling DeleteEntry and InsertEntry if they are actually different.
+
+How I found this bug:
+
+1. Verified that the entire bank test script contains exclusively SELECT and UPDATE statements, confirming that no user-level deletes were purging records.
+2. Identified that the failing query (SELECT v FROM kv WHERE k = %d) evaluates via the IndexLookupExecutor.
+3. Introduced debug instrumentation into the initialization phase of the executor to isolate whether the breakdown occurred at the storage engine level or index lookup level:
+
+```
+2026/05/18 16:26:33 Index Lookup Executor is inited for tid-44, len(e.rids)=0
+```
+
+4. Consulted with Google Gemini illuminated that many relational engines map logical updates to physical "Delete + Insert" pairs under the hood, drawing suspicion toward the internal lifecycle hooks of index management.
+5. Auditing the code pattern in UpdateExecutor revealed that unconditionally treating every modification as a full index replacement was inherently problematic when index keys remained static.
 
 ## Sketches
 
