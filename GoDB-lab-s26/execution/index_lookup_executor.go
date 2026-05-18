@@ -70,6 +70,7 @@ func (e *IndexLookupExecutor) Next() bool {
 		// Skips stale heap entry
 		if e.err == ErrTupleDeleted {
 			common.DPrintf(fmt.Sprintf("Skipped rid %s because key is deleted, tid-%d", rid.String(), e.ctx.txn.ID()))
+			e.err = nil
 			continue
 		} else if e.err != nil { // Probably txn deadlock error
 			return false
