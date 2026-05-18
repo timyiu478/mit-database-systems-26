@@ -286,9 +286,9 @@ func (lm *LockManager) lock(lr *LockRequest) error {
 	tcb := lr.tcb
 	lcb := lr.lcb
 
-	lcb.mu.Lock()
-
 	common.DPrintf(fmt.Sprintf("Tid %d is trying to lock tag %s with mode %s", lr.tid, lr.tag.String(), lr.mode.String()))
+
+	lcb.mu.Lock()
 
 	holdInfo, loaded := lcb.holders[lr.tid]
 
@@ -370,6 +370,12 @@ func (lm *LockManager) lock(lr *LockRequest) error {
 		lm.detectCh <- struct{}{}	
 	}
 
+	// Abort itself after 400 millisecond
+	time.AfterFunc(time.Duration(400) * time.Millisecond, func() {
+		common.DPrintf(fmt.Sprintf("Tid %d is timed out. Starts abort itself.", lr.tid))
+		lm.resolveCycle([]common.TransactionID{lr.tid})
+	})
+
 	// If conflict, block until it was granted/aborted
 	common.DPrintf(fmt.Sprintf("Tid %d starts to wait for tag %s", lr.tid, lr.tag.String()))
 	err := <- lr.waitCh
@@ -395,7 +401,7 @@ func (lm *LockManager) unlock(ulr *UnlockRequest) error {
 	delete(lcb.holders, ulr.tid)
 	tcb.lockCount.Add(-1)
 
-	// Remove holder from waitGraph
+	// Remove waiter->holder dependency from waitGraph
 	lm.graphMu.Lock()
 	for _, w := range lcb.waiters {
 		holders, loaded := lm.waitGraph[w.tid]
@@ -403,6 +409,7 @@ func (lm *LockManager) unlock(ulr *UnlockRequest) error {
 			common.DPrintf(fmt.Sprintf("Txn %d is in lcb.waiters but not found in waitGraph", w.tid))
 		}
 		common.Assert(loaded, "Waiter should added itself into wait graph")
+		common.Assert(w.tid != ulr.tid, fmt.Sprintf("Unlocking txn %d should not as a waiter in wait graph", ulr.tid))
 		if !lm.compatibility[w.mode][holdInfo.mode] {
 			count, loaded := holders[ulr.tid]
 			common.Assert(loaded, "Waiter should wait for incompatiable holder into wait graph")
@@ -525,7 +532,17 @@ func (lm *LockManager) resolveCycle(cycle []common.TransactionID) {
 }
 
 func (lm *LockManager) runGlobalDeadlockCheck() {
-	waitGraph := lm.waitGraph
+	// Take a fast deep-copy snapshot of the wait graph under the lock
+	lm.graphMu.Lock()
+	waitGraph := make(map[common.TransactionID][]common.TransactionID, len(lm.waitGraph))
+	for u, neighbors := range lm.waitGraph {
+		edges := make([]common.TransactionID, 0, len(neighbors))
+		for v, _ := range neighbors {
+			edges = append(edges, v)
+		}
+		waitGraph[u] = edges
+	}
+	lm.graphMu.Unlock()
 
 	visited := make(map[common.TransactionID]bool)
 	onStack := make(map[common.TransactionID]bool)
@@ -534,7 +551,7 @@ func (lm *LockManager) runGlobalDeadlockCheck() {
 	findAnyCycle = func(u common.TransactionID) []common.TransactionID {
 		visited[u] = true
 		onStack[u] = true
-		for v, _ := range waitGraph[u] {
+		for _, v := range waitGraph[u] {
 			if onStack[v] {
 				// Cycle detected! Return the start of the cycle
 				return []common.TransactionID{v, u}
@@ -561,23 +578,24 @@ func (lm *LockManager) runGlobalDeadlockCheck() {
 	}
 
 	// Iterate all waiting transactions. If not visited, start a DFS.
-	lm.graphMu.Lock()
-	for tid, _ := range waitGraph {
-		if !visited[tid] {
-			if cycle := findAnyCycle(tid); cycle != nil {
-				lm.graphMu.Unlock()
-				if cycle[0] == 0 {
-					common.DPrintf("Deadlock detected! Cycle: %v", cycle[1:])
-					lm.resolveCycle(cycle[1:])
-				} else {
-					common.DPrintf("Deadlock detected! Cycle: %v", cycle)
-					lm.resolveCycle(cycle)
+	foundCycle := true
+	for foundCycle {
+		foundCycle = false
+		for tid, _ := range waitGraph {
+			if !visited[tid] {
+				if cycle := findAnyCycle(tid); cycle != nil {
+					foundCycle = true
+					if cycle[0] == 0 {
+						common.DPrintf("Deadlock detected! Cycle: %v", cycle[1:])
+						lm.resolveCycle(cycle[1:])
+					} else {
+						common.DPrintf("Deadlock detected! Cycle: %v", cycle)
+						lm.resolveCycle(cycle)
+					}
 				}
-				return
 			}
 		}
 	}
-	lm.graphMu.Unlock()
 }
 
 func (lm *LockManager) loadOrStoreTCB(tid common.TransactionID) *TransactionControlBlock {
