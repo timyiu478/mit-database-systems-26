@@ -6,7 +6,6 @@ import (
 	"mit.edu/dsg/godb/indexing"
 	"mit.edu/dsg/godb/planner"
 	"mit.edu/dsg/godb/storage"
-	"mit.edu/dsg/godb/transaction"
 	"mit.edu/dsg/godb/common"
 )
 
@@ -21,6 +20,7 @@ type IndexScanExecutor struct {
 	scanIt    indexing.ScanIterator
 	buf       storage.RawTuple
 	tup 			storage.Tuple
+	err 		  error
 }
 
 func NewIndexScanExecutor(plan *planner.IndexScanNode, index indexing.Index, tableHeap *TableHeap) *IndexScanExecutor {
@@ -48,21 +48,6 @@ func (e *IndexScanExecutor) Init(ctx *ExecutorContext) error {
 
 	e.buf = make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
 
-	// Transaction Hook: acquires IS/IX on the table
-	if e.ctx.txn != nil {
-		tableLockMode := transaction.LockModeIS
-		if e.plan.ForUpdate {
-			tableLockMode = transaction.LockModeIX
-		}
-		tableTag := transaction.NewTableLockTag(e.plan.TableOid)
-		if err := e.ctx.txn.AcquireLock(tableTag, tableLockMode); err != nil {
-			common.DPrintf(fmt.Sprintf("Failed to acquired lock on %s with mode %d", tableTag.String(), tableLockMode))
-			return err
-		}
-		common.DPrintf(fmt.Sprintf("Acquired lock on %s with mode %d", tableTag.String(), tableLockMode))
-	}
-	
-
 	return nil
 }
 
@@ -70,14 +55,17 @@ func (e *IndexScanExecutor) Next() bool {
 
 	for e.scanIt.Next() {
 		rid := e.scanIt.Value()
-		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
-		e.tup = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
+		e.err = e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
 
 		// Skips stale heap entry
-		if err == ErrTupleDeleted {
+		if e.err == ErrTupleDeleted {
 			common.DPrintf(fmt.Sprintf("Skipped rid %s because stake heap entry", rid.String()))
 			continue
+		} else if e.err != nil { // Probably txn deadlock error
+			return false
 		}
+
+		e.tup = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
 
 		ks := e.index.Metadata().KeySchema
 		pl := e.index.Metadata().ProjectionList
@@ -97,7 +85,6 @@ func (e *IndexScanExecutor) Next() bool {
 			continue
 		}
 
-
 		return true
 	}
 
@@ -109,9 +96,13 @@ func (e *IndexScanExecutor) Current() storage.Tuple {
 }
 
 func (e *IndexScanExecutor) Close() error {
+	e.buf = nil
 	return e.scanIt.Close()
 }
 
 func (e *IndexScanExecutor) Error() error {
-	return e.scanIt.Error()
+	if e.err == nil {
+		return e.scanIt.Error()
+	}
+	return e.err
 }
