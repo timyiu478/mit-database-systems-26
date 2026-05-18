@@ -345,6 +345,7 @@ func (tableHeap *TableHeap) Iterator(txn *transaction.TransactionContext, mode t
 	it.tableHeap = tableHeap
 	it.open = false
 	it.txn = txn
+	it.mode = mode
 
 	// Make sure numPages > 0
 	sm := tableHeap.bufferPool.StorageManager()
@@ -366,6 +367,7 @@ func (tableHeap *TableHeap) Iterator(txn *transaction.TransactionContext, mode t
 	// Transaction Hook: acquires mode on the table
 	if txn != nil {
 		if err := txn.AcquireLock(tableHeap.tableTag, mode); err != nil {
+			it.err = err
 			return it, err
 		}
 	}
@@ -387,6 +389,8 @@ func (tableHeap *TableHeap) Iterator(txn *transaction.TransactionContext, mode t
 	it.heapPage = pageFrame.AsHeapPage()
 	it.open = true
 
+	pageFrame.PageLatch.RUnlock()
+
 	return it, nil
 }
 
@@ -400,6 +404,7 @@ type TableHeapIterator struct {
 	numPages int
 	open bool
 	txn  *transaction.TransactionContext
+	mode transaction.DBLockMode
 }
 
 // IsNil returns true if the TableHeapIterator is the default, uninitialized value
@@ -417,13 +422,15 @@ func (it *TableHeapIterator) Next() bool {
 		return false
 	}
 
+	it.heapPage.PageFrame.PageLatch.RLock()
+
 	for {
 		it.rid.Slot++
 
 		if int(it.rid.Slot) >= it.heapPage.NumSlots() {
 			// Release current page
 			it.heapPage.PageFrame.PageLatch.RUnlock()
-			it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, false)
+			it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, it.mode != transaction.LockModeS)
 			it.heapPage.PageFrame = nil
 
 			// Check if next page is available
@@ -457,6 +464,8 @@ func (it *TableHeapIterator) Next() bool {
 
 		it.buffer = it.heapPage.AccessTuple(it.rid)
 
+		it.heapPage.PageFrame.PageLatch.RUnlock()
+
 		return true
 	}
 }
@@ -486,8 +495,7 @@ func (it *TableHeapIterator) Close() error {
 		return nil
 	}
 	if it.heapPage.PageFrame != nil {
-		it.heapPage.PageFrame.PageLatch.RUnlock()
-		it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, false)
+		it.tableHeap.bufferPool.UnpinPage(it.heapPage.PageFrame, it.mode != transaction.LockModeS)
 		it.heapPage.PageFrame = nil
 	}
 	it.open = false
