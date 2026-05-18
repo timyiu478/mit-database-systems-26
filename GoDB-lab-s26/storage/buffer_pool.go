@@ -236,11 +236,12 @@ func (bp *BufferPool) FlushAllPages() error {
 		}
 		pf.PageLatch.Lock()
 		writeErr := dbFile.WritePage(int(pf.pageId.PageNum), pf.Bytes[:])
-		pf.PageLatch.Unlock()
 		if writeErr != nil {
+			pf.PageLatch.Unlock()
 			return writeErr
 		}
 		pf.isDirty.Store(false)
+		pf.PageLatch.Unlock()
 	}
 
 	return nil
