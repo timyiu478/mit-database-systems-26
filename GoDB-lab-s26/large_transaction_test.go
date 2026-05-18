@@ -365,6 +365,9 @@ func setupKVDB(t *testing.T, wdb *workloadDB, numKeys int, initialVal int64) {
 		_, err := wdb.execSQL(nil, fmt.Sprintf("INSERT INTO kv VALUES (%d, %d)", k, initialVal))
 		require.NoError(t, err)
 	}
+	rows, err := wdb.execSQL(nil, "SELECT v FROM kv")
+	require.NoError(t, err)
+	require.Len(t, rows, numKeys, "Failed to get all inserted rows from kv")
 }
 
 // TestWAL_FlushStress exercises the WAL-before-data invariant under a simulated
