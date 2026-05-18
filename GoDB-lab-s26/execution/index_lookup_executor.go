@@ -22,6 +22,7 @@ type IndexLookupExecutor struct {
 	tuple     storage.Tuple
 	scanned   bool
 	cursor    int
+	buf       storage.RawTuple
 }
 
 func NewIndexLookupExecutor(plan *planner.IndexLookupNode, index indexing.Index, tableHeap *TableHeap) *IndexLookupExecutor {
@@ -31,6 +32,7 @@ func NewIndexLookupExecutor(plan *planner.IndexLookupNode, index indexing.Index,
 		index: index,
 		scanned: false,
 		cursor: 0,
+		buf: make(storage.RawTuple, tableHeap.StorageSchema().BytesPerTuple()),
 	}
 
 	return e
@@ -61,16 +63,17 @@ func (e *IndexLookupExecutor) Next() bool {
 
 	for e.cursor < len(e.rids) {
 		rid := e.rids[e.cursor]
-		buf := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
-		err := e.tableHeap.ReadTuple(e.ctx.txn, rid, buf, e.plan.ForUpdate)
-		e.tuple = storage.FromRawTuple(buf, e.tableHeap.StorageSchema(), rid)
+		e.err = e.tableHeap.ReadTuple(e.ctx.txn, rid, e.buf, e.plan.ForUpdate)
+		e.tuple = storage.FromRawTuple(e.buf, e.tableHeap.StorageSchema(), rid)
 
 		e.cursor++
 
 		// Skips stale heap entry
-		if err == ErrTupleDeleted {
+		if e.err == ErrTupleDeleted {
 			common.DPrintf(fmt.Sprintf("Skipped rid %s because key is deleted", rid.String()))
 			continue
+		} else if e.err != nil { // Probably txn deadlock error
+			return false
 		}
 		
 		ks := e.index.Metadata().KeySchema
@@ -91,7 +94,6 @@ func (e *IndexLookupExecutor) Next() bool {
 			continue
 		}
 
-
 		return true
 	}
 
@@ -103,6 +105,7 @@ func (e *IndexLookupExecutor) Current() storage.Tuple {
 }
 
 func (e *IndexLookupExecutor) Close() error {
+	e.buf = nil
 	return nil
 }
 

@@ -19,7 +19,8 @@ type UpdateExecutor struct {
 	ctx        *ExecutorContext
 	indexes    []indexing.Index
 	updatedCount int64
-	updateDone    bool
+	updateDone   bool
+	err          error
 }
 
 func NewUpdateExecutor(plan *planner.UpdateNode, child Executor, tableHeap *TableHeap, indexes []indexing.Index) *UpdateExecutor {
@@ -77,8 +78,8 @@ func (e *UpdateExecutor) Next() bool {
 			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
 			keyTuple.WriteToBuffer(rawKeyTuple, ks)
 			key := index.Metadata().AsKey(rawKeyTuple)
-			delErr := index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
-			if delErr != nil {
+			e.err = index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
+			if e.err != nil {
 				return false
 			}
 		}
@@ -92,8 +93,8 @@ func (e *UpdateExecutor) Next() bool {
 
 		row := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
 		updatedTuple.WriteToBuffer(row, e.tableHeap.StorageSchema())
-		err := e.tableHeap.UpdateTuple(e.ctx.txn, tuple.RID(), row)
-		if err != nil {
+		e.err = e.tableHeap.UpdateTuple(e.ctx.txn, tuple.RID(), row)
+		if e.err != nil {
 			return false
 		}
 
@@ -109,8 +110,8 @@ func (e *UpdateExecutor) Next() bool {
 			upRawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
 			upKeyTuple.WriteToBuffer(upRawKeyTuple, ks)
 			upKey := index.Metadata().AsKey(upRawKeyTuple)
-			insertErr := index.InsertEntry(upKey, tuple.RID(), e.ctx.txn)
-			if insertErr != nil {
+			e.err = index.InsertEntry(upKey, tuple.RID(), e.ctx.txn)
+			if e.err != nil {
 				return false
 			}
 		}
@@ -136,5 +137,8 @@ func (e *UpdateExecutor) Close() error {
 }
 
 func (e *UpdateExecutor) Error() error {
-	return e.child.Error()
+	if e.err == nil {
+		return e.child.Error()
+	}
+	return e.err
 }

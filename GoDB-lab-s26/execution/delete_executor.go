@@ -17,7 +17,8 @@ type DeleteExecutor struct {
 	ctx        *ExecutorContext
 	indexes    []indexing.Index
 	deletedCount int64
-	deleteDone    bool
+	deleteDone   bool
+	err          error
 }
 
 func NewDeleteExecutor(plan *planner.DeleteNode, child Executor, tableHeap *TableHeap, indexes []indexing.Index) *DeleteExecutor {
@@ -58,8 +59,8 @@ func (e *DeleteExecutor) Next() bool {
 	}
 
 	for _, tuple := range tuplesTobeDeleted {
-		err := e.tableHeap.DeleteTuple(e.ctx.txn, tuple.RID())
-		if err != nil {
+		e.err = e.tableHeap.DeleteTuple(e.ctx.txn, tuple.RID())
+		if e.err != nil {
 			return false
 		}
 
@@ -76,8 +77,8 @@ func (e *DeleteExecutor) Next() bool {
 			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
 			keyTuple.WriteToBuffer(rawKeyTuple, ks)
 			key := index.Metadata().AsKey(rawKeyTuple)
-			err := index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
-			if err != nil {
+			e.err = index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
+			if e.err != nil {
 				return false
 			}
 		}
@@ -99,5 +100,8 @@ func (e *DeleteExecutor) Close() error {
 }
 
 func (e *DeleteExecutor) Error() error {
-	return e.child.Error()
+	if e.err == nil {
+		return e.child.Error()
+	}
+	return e.err
 }

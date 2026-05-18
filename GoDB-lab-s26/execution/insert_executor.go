@@ -20,6 +20,7 @@ type InsertExecutor struct {
 	indexes    []indexing.Index
 	insertedCount int64
 	insertDone    bool
+	err           error
 }
 
 func NewInsertExecutor(plan *planner.InsertNode, child Executor, tableHeap *TableHeap, indexes []indexing.Index) *InsertExecutor {
@@ -58,6 +59,7 @@ func (e *InsertExecutor) Next() bool {
 		e.child.Current().WriteToBuffer(row, e.tableHeap.StorageSchema())
 		rid, err := e.tableHeap.InsertTuple(e.ctx.txn, row)
 		if err != nil {
+			e.err = err
 			return false
 		}
 
@@ -75,8 +77,8 @@ func (e *InsertExecutor) Next() bool {
 			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
 			keyTuple.WriteToBuffer(rawKeyTuple, ks)
 			key := index.Metadata().AsKey(rawKeyTuple)
-			err := index.InsertEntry(key, rid, e.ctx.txn)
-			if err != nil {
+			e.err = index.InsertEntry(key, rid, e.ctx.txn)
+			if e.err != nil {
 				return false
 			}
 		}
@@ -94,5 +96,8 @@ func (e *InsertExecutor) Close() error {
 }
 
 func (e *InsertExecutor) Error() error {
-	return e.child.Error()
+	if e.err != nil {
+		return e.child.Error()
+	}
+	return e.err
 }

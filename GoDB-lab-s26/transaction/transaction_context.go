@@ -116,7 +116,7 @@ func (txn *TransactionContext) AcquireLock(tag DBLockTag, mode DBLockMode) error
 		return nil
 	}
 
-	// A Shared Intent Exclusive (SIX) lock is acquired when a transaction holds a Shared (S) lock and subsequently requests an Intent Exclusive (IX) lock on the same resourc
+	// A Shared Intent Exclusive (SIX) lock is acquired when a transaction holds a Shared (S) lock and subsequently requests an Intent Exclusive (IX) lock on the same resource
 	// Ref: https://learn.microsoft.com/en-us/answers/questions/154976/mssql-lock-uix-six-siu-example
 	if loaded && ((heldMode == LockModeS && mode == LockModeIX) || (mode == LockModeS && heldMode == LockModeIX)) {
 		common.DPrintf(fmt.Sprintf("Change to requested lock mode from %d to %d", mode, LockModeSIX))
