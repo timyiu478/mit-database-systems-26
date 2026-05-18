@@ -22,6 +22,8 @@ type BufferPoolShard struct {
 
 	youngList      *list.List
 	oldList        *list.List
+
+	logManager     LogManager
 }
 
 // BufferPool manages the reading and writing of database pages between the DiskFileManager and memory.
@@ -41,7 +43,7 @@ type BufferPool struct {
 	numShards      uint64
 }
 
-func NewBufferPoolShard(numPages uint64) *BufferPoolShard {
+func NewBufferPoolShard(numPages uint64, logManager LogManager) *BufferPoolShard {
 	bps := &BufferPoolShard{}
 
 	bps.numPages = numPages
@@ -49,6 +51,8 @@ func NewBufferPoolShard(numPages uint64) *BufferPoolShard {
 
 	bps.youngList = list.New()
 	bps.oldList = list.New()
+
+	bps.logManager = logManager
 
 	return bps
 }
@@ -76,9 +80,9 @@ func NewBufferPool(numPages int, storageManager DBFileManager, logManager LogMan
 
 	for i := uint64(0); i < bp.numShards; i++ {
 	  if i < remainderPages {
-			bp.shards[i] = NewBufferPoolShard(pagesPerShard + 1)
+			bp.shards[i] = NewBufferPoolShard(pagesPerShard + 1, logManager)
 		} else {
-			bp.shards[i] = NewBufferPoolShard(pagesPerShard)
+			bp.shards[i] = NewBufferPoolShard(pagesPerShard, logManager)
 		}
 	}
 
@@ -142,6 +146,7 @@ func (bp *BufferPool) GetPage(pageID common.PageID) (*PageFrame, error) {
 			shard.rollbackEviction(victim)
 			return nil, err
 		}
+		bp.logManager.WaitUntilFlushed(victim.LSN())
 		if err := dbFile.WritePage(int(victim.pageId.PageNum), victim.Bytes[:]); err != nil {
 			shard.rollbackEviction(victim)
 			return nil, err
@@ -231,11 +236,12 @@ func (bp *BufferPool) FlushAllPages() error {
 		}
 		pf.PageLatch.Lock()
 		writeErr := dbFile.WritePage(int(pf.pageId.PageNum), pf.Bytes[:])
-		pf.PageLatch.Unlock()
 		if writeErr != nil {
+			pf.PageLatch.Unlock()
 			return writeErr
 		}
 		pf.isDirty.Store(false)
+		pf.PageLatch.Unlock()
 	}
 
 	return nil
@@ -272,6 +278,10 @@ func (bps *BufferPoolShard) getPageFromPool(pageID common.PageID) (*PageFrame) {
 	return nil
 }
 
+// Evitable victim conditions:
+// 1. refCount is 0
+// 2. page frame LSN <= LogManager.FlushedUntil()
+// 3. its page latch can be granted
 func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
 	for e := bps.oldList.Back(); e != nil; e = e.Prev() {
 		pf := e.Value.(*PageFrame)
@@ -295,6 +305,8 @@ func (bps *BufferPoolShard) findVictim() (*list.Element, *PageFrame) {
 			return e, pf
 		}
 	}
+
+	common.DPrintf("Unable to find valid page to evict")
 	return nil, nil
 }
 
@@ -307,6 +319,7 @@ func (bps *BufferPoolShard) evictPage() *PageFrame {
 	if (bps.oldList.Len()+bps.youngList.Len()+int(bps.numBaking)) < int(bps.numPages) {
 		pf := &PageFrame{}
 		pf.isDirty.Store(false)
+		pf.cached.Store(false)
 		pf.refCount.Store(1)
 		pf.inOld = true
 		pf.pageId.Oid = common.InvalidObjectID
@@ -327,6 +340,8 @@ func (bps *BufferPoolShard) evictPage() *PageFrame {
 		bps.oldList.Remove(evictE)
 	}
 
+	victim.cached.Store(false)
+
 	bps.numBaking++
 
 	return victim
@@ -337,7 +352,7 @@ func (bps *BufferPoolShard) rollbackEviction(pf *PageFrame) {
 	bps.mu.Lock()
 	defer bps.mu.Unlock()
 
-	pf.refCount.Store(0) 
+	pf.refCount.Store(0)
 
 	var e *list.Element
 	if pf.inOld {

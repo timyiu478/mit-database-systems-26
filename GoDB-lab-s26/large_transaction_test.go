@@ -365,6 +365,9 @@ func setupKVDB(t *testing.T, wdb *workloadDB, numKeys int, initialVal int64) {
 		_, err := wdb.execSQL(nil, fmt.Sprintf("INSERT INTO kv VALUES (%d, %d)", k, initialVal))
 		require.NoError(t, err)
 	}
+	rows, err := wdb.execSQL(nil, "SELECT v FROM kv")
+	require.NoError(t, err)
+	require.Len(t, rows, numKeys, "Failed to get all inserted rows from kv")
 }
 
 // TestWAL_FlushStress exercises the WAL-before-data invariant under a simulated
@@ -463,8 +466,8 @@ func TestWAL_FlushStress(t *testing.T) {
 //
 //  1. Point transferors: two targeted UPDATEs (Table IX + Tuple X per row). Multiple
 //     transferors touching disjoint keys run concurrently (IX+IX compatible).
-//  2. IS→S scanners: point SELECT (Table IS + Tuple S via IndexLookup) then full SUM
-//     (upgrades table lock IS→S). S is incompatible with IX and X, so no transfers or
+//  2. IS → S scanners: point SELECT (Table IS + Tuple S via IndexLookup) then full SUM
+//     (upgrades table lock IS → S). S is incompatible with IX and X, so no transfers or
 //     bulk ops are in-flight during the aggregate, guaranteeing a consistent snapshot.
 //     The SUM result must always equal the expected total.
 //  3. Bulk operators: UPDATE all rows with a random bonus (no WHERE clause →
@@ -519,8 +522,8 @@ func TestConcurrent_Bank(t *testing.T) {
 		}(i)
 	}
 
-	// 2. IS→S scanners (3 goroutines): point SELECT acquires IS+Tuple-S via IndexLookup,
-	// then SUM upgrades the table lock IS→S. Because S is incompatible with IX and X,
+	// 2. IS → S scanners (3 goroutines): point SELECT acquires IS+Tuple-S via IndexLookup,
+	// then SUM upgrades the table lock IS → S. Because S is incompatible with IX and X,
 	// no transfer or bulk op is in-flight when the aggregate runs, guaranteeing a
 	// consistent snapshot. The SUM result is checked against the expected total.
 	for i := 0; i < 3; i++ {
@@ -537,14 +540,14 @@ func TestConcurrent_Bank(t *testing.T) {
 				if abortOnDeadlock(t, wdb, txn, err) {
 					continue
 				}
-				require.Len(t, pointRows, 1, "IS→S scanner: key %d not found", k)
+				require.Len(t, pointRows, 1, "IS → S scanner: key %d not found", k)
 				sumRows, err := wdb.execSQL(txn, "SELECT SUM(kv.v) FROM kv")
 				if abortOnDeadlock(t, wdb, txn, err) {
 					continue
 				}
 				got := sumRows[0][0].IntValue()
 				expected := int64(numKeys*initialBalance) + totalBonus.Load()
-				assert.Equal(t, expected, got, "IS→S scanner: sum mismatch")
+				assert.Equal(t, expected, got, "IS → S scanner: sum mismatch")
 				assert.NoError(t, wdb.TransactionManager.Commit(txn))
 				runtime.Gosched()
 			}

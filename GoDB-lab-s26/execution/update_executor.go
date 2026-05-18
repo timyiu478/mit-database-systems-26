@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"fmt"
 	"mit.edu/dsg/godb/common"
 	"mit.edu/dsg/godb/indexing"
 	"mit.edu/dsg/godb/planner"
@@ -19,7 +20,8 @@ type UpdateExecutor struct {
 	ctx        *ExecutorContext
 	indexes    []indexing.Index
 	updatedCount int64
-	updateDone    bool
+	updateDone   bool
+	err          error
 }
 
 func NewUpdateExecutor(plan *planner.UpdateNode, child Executor, tableHeap *TableHeap, indexes []indexing.Index) *UpdateExecutor {
@@ -41,7 +43,13 @@ func (e *UpdateExecutor) PlanNode() planner.PlanNode {
 
 func (e *UpdateExecutor) Init(ctx *ExecutorContext) error {
 	e.ctx = ctx
-	return e.child.Init(ctx)
+	e.err = e.child.Init(ctx)
+
+	if e.ctx.txn != nil {
+		common.DPrintf(fmt.Sprintf("Update Executor is inited for tid-%d", e.ctx.txn.ID()))
+	}
+
+	return e.err
 }
 
 func (e *UpdateExecutor) Next() bool {
@@ -51,35 +59,20 @@ func (e *UpdateExecutor) Next() bool {
 
 	tuplesTobeUpdated := make([]storage.Tuple, 0)
 
+	childOutputSchema := e.child.PlanNode().OutputSchema()
+	childDesc := storage.NewRawTupleDesc(childOutputSchema)
+
 	for {
 		ret := e.child.Next()
 		if !ret {
 			break
 		}
-		tuplesTobeUpdated = append(tuplesTobeUpdated, e.child.Current())
+		tup := e.child.Current()
+		tuplesTobeUpdated = append(tuplesTobeUpdated, tup.DeepCopy(childDesc))
 	}
 
 	for _, tuple := range tuplesTobeUpdated {
-		// delete old index key
-		for _, index := range e.indexes {
-			ks := index.Metadata().KeySchema
-			pl := index.Metadata().ProjectionList
-
-			vals := make([]common.Value, ks.NumColumns())	
-			for i := 0; i < ks.NumColumns(); i++ {
-				vals[i] = tuple.GetValue(pl[i])
-			}
-			keyTuple := storage.FromValues().Extend(vals)
-			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
-			keyTuple.WriteToBuffer(rawKeyTuple, ks)
-			key := index.Metadata().AsKey(rawKeyTuple)
-			delErr := index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
-			if delErr != nil {
-				return false
-			}
-		}
-
-		// update tuple
+		// Update tuple
 		vals := make([]common.Value, len(e.plan.Expressions))	
 		for i, expr := range e.plan.Expressions {
 			vals[i] = expr.Eval(tuple)
@@ -88,15 +81,27 @@ func (e *UpdateExecutor) Next() bool {
 
 		row := make(storage.RawTuple, e.tableHeap.StorageSchema().BytesPerTuple())
 		updatedTuple.WriteToBuffer(row, e.tableHeap.StorageSchema())
-		err := e.tableHeap.UpdateTuple(e.ctx.txn, tuple.RID(), row)
-		if err != nil {
+		e.err = e.tableHeap.UpdateTuple(e.ctx.txn, tuple.RID(), row)
+		if e.err != nil {
 			return false
 		}
 
-		// insert new index key
+		// Delete old index key & insert new index key
+		// if old index key != new index key
+		// Noted that the DeleteEntry tasks are defered until commit
 		for _, index := range e.indexes {
 			ks := index.Metadata().KeySchema
 			pl := index.Metadata().ProjectionList
+
+			vals := make([]common.Value, ks.NumColumns())
+			for i := 0; i < ks.NumColumns(); i++ {
+				vals[i] = tuple.GetValue(pl[i])
+			}
+			keyTuple := storage.FromValues().Extend(vals)
+			rawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
+			keyTuple.WriteToBuffer(rawKeyTuple, ks)
+			key := index.Metadata().AsKey(rawKeyTuple)
+
 			updatedVals := make([]common.Value, ks.NumColumns())	
 			for i := 0; i < ks.NumColumns(); i++ {
 				updatedVals[i] = updatedTuple.GetValue(pl[i])
@@ -105,8 +110,17 @@ func (e *UpdateExecutor) Next() bool {
 			upRawKeyTuple := make(storage.RawTuple, ks.BytesPerTuple())
 			upKeyTuple.WriteToBuffer(upRawKeyTuple, ks)
 			upKey := index.Metadata().AsKey(upRawKeyTuple)
-			insertErr := index.InsertEntry(upKey, tuple.RID(), e.ctx.txn)
-			if insertErr != nil {
+
+			if key.Equals(upKey) {
+				continue
+			}
+
+			e.err = index.DeleteEntry(key, tuple.RID(), e.ctx.txn)
+			if e.err != nil {
+				return false
+			}
+			e.err = index.InsertEntry(upKey, tuple.RID(), e.ctx.txn)
+			if e.err != nil {
 				return false
 			}
 		}
@@ -132,5 +146,8 @@ func (e *UpdateExecutor) Close() error {
 }
 
 func (e *UpdateExecutor) Error() error {
-	return e.child.Error()
+	if e.err == nil {
+		return e.child.Error()
+	}
+	return e.err
 }

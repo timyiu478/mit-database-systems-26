@@ -73,9 +73,7 @@ As a result, if another thread requests a page that is currently being used as a
 
 The InsertTuple function is the only code path that allocates and initializes new physical pages. Page-allocation and the decision logic for how many pages to create are protected by a dedicated mutex, preventing over-allocation.
 
-Initialized pages contain a magic value at a fixed header offset; checking that offset tells us whether a page frame is initialized. The table-heap iterator relies on this to wait for a newly allocated page to be initialized, assuming the allocator will initialize it quickly:
-
-The iterator takes a read latch on a page frame immediately after acquiring it and holds that latch until Next() advances to the following page. This design assumes the iterator caller will scan rows quickly.
+Initialized pages contain a magic value at a fixed header offset; checking that offset tells us whether a page frame is initialized.
 
 ## Implementation Challenges
 

@@ -41,26 +41,83 @@ type TransactionManager struct {
 
 // NewTransactionManager initializes the transaction manager.
 func NewTransactionManager(logManager storage.LogManager, bufferPool *storage.BufferPool, lockManager *LockManager) *TransactionManager {
-	panic("unimplemented")
+	tm := &TransactionManager{
+		activeTxns: xsync.NewMapOf[common.TransactionID, activeTxnEntry](), 
+		logManager: logManager,
+		lockManager: lockManager,
+		bufferPool: bufferPool,
+	}
+
+	tm.txnPool = sync.Pool{
+		New: func() any {
+			return &TransactionContext{
+				id: common.TransactionID(tm.nextTxnID.Add(1)),
+				lm: lockManager,
+				logRecords: newLogRecordBuffer(),
+				heldLocks:  make(map[DBLockTag]DBLockMode),
+			}
+		},
+	}
+
+	return tm
 }
 
 // Begin starts a new transaction and returns the initialized context.
 func (tm *TransactionManager) Begin() (*TransactionContext, error) {
-	return nil, nil
+	txn := tm.txnPool.Get().(*TransactionContext)
+
+	common.DPrintf(fmt.Sprintf("Begin transaction %d\n", txn.ID()))
+
+	lsn, err := tm.logManager.Append(txn.NewBeginTransactionRecord())
+
+	if err != nil {
+		return nil, err
+	}
+
+	tm.activeTxns.Store(txn.ID(), activeTxnEntry{txn: txn, startLsn: lsn})
+
+	common.DPrintf(fmt.Sprintf("Added Begin Record into WAL, tid-%d\n", txn.ID()))
+
+	return txn, nil
 }
 
 // Commit completes a transaction and makes its effects durable and visible.
 func (tm *TransactionManager) Commit(txn *TransactionContext) error {
+	common.DPrintf(fmt.Sprintf("Committing transaction %d\n", txn.ID()))
 
 	// Execute In-Memory changes (Indexes) after flushed. Think about how this should interleave with the commit logic.
 	for _, task := range txn.commitActions {
 		task.Target.Invoke(task.Type, task.Key, task.RID)
 	}
+
+	lsn, err := tm.logManager.Append(txn.NewCommitRecord())
+
+	if err != nil {
+		return err
+	}
+
+	if err := tm.logManager.WaitUntilFlushed(lsn); err != nil {
+		return err
+	}
+
+	common.DPrintf(fmt.Sprintf("Added Commit Record into WAL, tid-%d\n", txn.ID()))
+
+	tm.activeTxns.Delete(txn.ID())
+
+	// Release locks
+	txn.ReleaseAllLocks()
+
+	// Recycle transaction context
+	txn.Reset(common.TransactionID(tm.nextTxnID.Add(1)))
+	tm.txnPool.Put(txn)
+
 	return nil
 }
 
 // Abort stops a transaction and ensures its effects are rolled back
 func (tm *TransactionManager) Abort(txn *TransactionContext) error {
+	common.DPrintf(fmt.Sprintf("Aborting transaction %d\n", txn.ID()))
+
 	// Rollback In-Memory changes (Indexes)
 	// YOU SHOULD NOT NEED TO MODIFY THIS LOGIC
 	for i := len(txn.abortActions) - 1; i >= 0; i-- {
@@ -68,8 +125,95 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 		cleanupTask.Target.Invoke(cleanupTask.Type, cleanupTask.Key, cleanupTask.RID)
 	}
 
-	fmt.Printf("Aborting transaction %d\n", txn.ID())
-	// Add your implementation here
+
+	// Rollback changes in LIFO order (Pages)
+	numRecords := txn.logRecords.len()
+	for i := numRecords - 1; i >= 0; i-- {
+		var clr storage.LogRecord
+		var lsn storage.LSN
+		var err error
+		var pf *storage.PageFrame
+
+		record := txn.logRecords.get(i)
+
+		switch record.RecordType() {
+		case storage.LogInsert:
+			clr = txn.NewInsertCLR(record)
+			lsn, err = tm.logManager.Append(clr)
+			if err != nil {
+				return err
+			}
+			rid := clr.RID()
+			pf, err = tm.bufferPool.GetPage(rid.PageID)
+			if err != nil {
+				return err
+			}
+			pf.PageLatch.Lock()
+			heapPage := pf.AsHeapPage()
+			heapPage.MarkDeleted(rid, true)
+			pf.MonotonicallyUpdateLSN(lsn)
+			pf.PageLatch.Unlock()
+			tm.bufferPool.UnpinPage(pf, true)
+		case storage.LogDelete:
+			clr = txn.NewDeleteCLR(record)
+			lsn, err = tm.logManager.Append(clr)
+			if err != nil {
+				return err
+			}
+			rid := clr.RID()
+			pf, err = tm.bufferPool.GetPage(rid.PageID)
+			if err != nil {
+				return err
+			}
+			pf.PageLatch.Lock()
+			heapPage := pf.AsHeapPage()
+			heapPage.MarkDeleted(rid, false)
+			pf.MonotonicallyUpdateLSN(lsn)
+			pf.PageLatch.Unlock()
+			tm.bufferPool.UnpinPage(pf, true)
+		case storage.LogUpdate:
+			clr = txn.NewUpdateCLR(record)
+			lsn, err = tm.logManager.Append(clr)
+			if err != nil {
+				return err
+			}
+			rid := clr.RID()
+			afterImage := clr.AfterImage() // The BeforeImage of the original update is the AfterImage of the CLR
+			pf, err = tm.bufferPool.GetPage(rid.PageID)
+			if err != nil {
+				return err
+			}
+			pf.PageLatch.Lock()
+			heapPage := pf.AsHeapPage()
+			tup := heapPage.AccessTuple(rid)
+			copy(tup, afterImage)
+			pf.MonotonicallyUpdateLSN(lsn)
+			pf.PageLatch.Unlock()
+			tm.bufferPool.UnpinPage(pf, true)
+		}
+	}
+
+	lsn, err := tm.logManager.Append(txn.NewAbortRecord())
+
+	if err != nil {
+		return err
+	}
+
+	if err := tm.logManager.WaitUntilFlushed(lsn); err != nil {
+		return err
+	}
+
+	common.DPrintf(fmt.Sprintf("Added Abort Record into WAL, tid-%d\n", txn.ID()))
+
+	tm.activeTxns.Delete(txn.ID())
+
+	// Release locks
+	txn.ReleaseAllLocks()
+
+	// Recycle transaction context
+	txn.Reset(common.TransactionID(tm.nextTxnID.Add(1)))
+	tm.txnPool.Put(txn)
+
 	return nil
 }
 

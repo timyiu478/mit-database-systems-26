@@ -925,11 +925,11 @@ func TestLock_Stress_Mixed_ScannerUpdater(t *testing.T) {
 // Unlike TestLock_Stress_Mixed_ScannerUpdater, every lock acquisition goes through at least one
 // upgrade step — no lock mode is held directly without first holding a weaker mode.
 //
-//   - Profile A (Table IS→IX, Tuple IS→X): 18 point transferors; multiple can run concurrently
+//   - Profile A (Table IS → IX, Tuple IS →  X): 18 point transferors; multiple can run concurrently
 //     when they touch different slots. Table IS is upgraded to IX; each tuple IS is upgraded to X.
-//   - Profile B (Table S→SIX, Tuple X): 9 scan-then-update transferors; fully serialized
+//   - Profile B (Table S → SIX, Tuple X): 9 scan-then-update transferors; fully serialized
 //     with all writers. Table IS is upgraded to S, then to SIX; each tuple IS is upgraded to X.
-//   - Profile C (Table IS→IX→X): 3 bulk bonus writers; fully exclusive at all levels via two
+//   - Profile C (Table IS → IX → X): 3 bulk bonus writers; fully exclusive at all levels via two
 //     table upgrades: IS to IX, then IX to X.
 //
 // Invariants verified inside each critical section using atomic counters:
@@ -959,8 +959,8 @@ func TestLock_Stress_UpgradeStorm(t *testing.T) {
 	var tidCounter atomic.Int64
 	var wg sync.WaitGroup
 
-	// 1. Profile A: IS → IX point transferors (Table IS→IX, Tuple S→X on from+to)
-	// IS→IX at the table level allows multiple A workers to run concurrently when they touch
+	// 1. Profile A: IS → IX point transferors (Table IS → IX, Tuple S → X on from + to)
+	// IS → IX at the table level allows multiple A workers to run concurrently when they touch
 	// different slots. Each tuple lock is first acquired as IS then upgraded to X.
 	for i := 0; i < 18; i++ {
 		wg.Add(1)
@@ -1023,7 +1023,7 @@ func TestLock_Stress_UpgradeStorm(t *testing.T) {
 		}(i)
 	}
 
-	// 2. Profile B: S → SIX scan-then-update transferors (Table IS→S→SIX, Tuple X)
+	// 2. Profile B: S → SIX scan-then-update transferors (Table IS → S → SIX, Tuple X)
 	for i := 0; i < 9; i++ {
 		wg.Add(1)
 		go func(id int) {
