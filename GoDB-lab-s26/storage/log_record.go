@@ -165,6 +165,14 @@ func AsVerifiedLogRecord(data []byte) (LogRecord, error) {
 			if size != uint16(BeginCheckpointRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
 	case LogEndCheckpoint:
 			if size < uint16(EndCheckpointRecordSize(0)){ return LogRecord{}, ErrCorruptedLogRecord }
+	case LogInsertCLR:
+			if size != uint16(InsertCLRSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogDeleteCLR:
+			if size != uint16(DeleteCLRSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogUpdateCLR:
+			if size < uint16(logRecordHeaderSize + 8 + common.RecordIDSize) { return LogRecord{}, ErrCorruptedLogRecord }
+			recordSize := binary.LittleEndian.Uint16(data[offsetRID:offsetRID+common.RecordIDSize])
+			if size != uint16(logRecordHeaderSize + 8 + common.RecordIDSize + recordSize) { return LogRecord{}, ErrCorruptedLogRecord }
 	}
 	
 	return AsLogRecord(data), nil
