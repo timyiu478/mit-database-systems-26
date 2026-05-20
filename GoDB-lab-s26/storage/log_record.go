@@ -126,6 +126,11 @@ var ErrCorruptedLogRecord = fmt.Errorf("log record corrupted: checksum mismatch"
 // AsVerifiedLogRecord parses a raw byte slice into a LogRecord and verifies its checksum.
 // It returns an ErrCorruptedLogRecord if the data is too short or the checksum does not match.
 func AsVerifiedLogRecord(data []byte) (LogRecord, error) {
+	// Prevent out-of-bounds panic if data is too small to contain a valid header
+	if len(data) < logRecordHeaderSize {
+		return LogRecord{}, ErrCorruptedLogRecord
+	}
+
 	size := binary.LittleEndian.Uint16(data[offsetSize:])
 
 	// Min valid size is 8 - BeginCheckpoint record
@@ -153,12 +158,12 @@ func AsVerifiedLogRecord(data []byte) (LogRecord, error) {
 			if size != uint16(AbortRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
 	case LogInsert:
 			if size < uint16(logRecordHeaderSize + 8 + common.RecordIDSize) { return LogRecord{}, ErrCorruptedLogRecord }
-			recordSize := binary.LittleEndian.Uint16(data[offsetRID:offsetRID+common.RecordIDSize])
-			if size != uint16(logRecordHeaderSize + 8 + common.RecordIDSize + recordSize) { return LogRecord{}, ErrCorruptedLogRecord }
 	case LogUpdate:
-			if size < uint16(logRecordHeaderSize + 8 + common.RecordIDSize) { return LogRecord{}, ErrCorruptedLogRecord }
-			recordSize := binary.LittleEndian.Uint16(data[offsetRID:offsetRID+common.RecordIDSize])
-			if size != uint16(logRecordHeaderSize + 8 + common.RecordIDSize + 2 * recordSize) { return LogRecord{}, ErrCorruptedLogRecord }
+			minSize := uint16(logRecordHeaderSize + 8 + common.RecordIDSize)
+			if size < minSize { return LogRecord{}, ErrCorruptedLogRecord }
+			// The remaining payload contains both BeforeImage and AfterImage.
+			// Since they are asserted to be identical sizes, the total payload length must be even.
+			if (size-minSize)%2 != 0 { return LogRecord{}, ErrCorruptedLogRecord }
 	case LogDelete:
 			if size != uint16(DeleteRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
 	case LogBeginCheckpoint:
@@ -171,8 +176,6 @@ func AsVerifiedLogRecord(data []byte) (LogRecord, error) {
 			if size != uint16(DeleteCLRSize()) { return LogRecord{}, ErrCorruptedLogRecord }
 	case LogUpdateCLR:
 			if size < uint16(logRecordHeaderSize + 8 + common.RecordIDSize) { return LogRecord{}, ErrCorruptedLogRecord }
-			recordSize := binary.LittleEndian.Uint16(data[offsetRID:offsetRID+common.RecordIDSize])
-			if size != uint16(logRecordHeaderSize + 8 + common.RecordIDSize + recordSize) { return LogRecord{}, ErrCorruptedLogRecord }
 	}
 	
 	return AsLogRecord(data), nil
