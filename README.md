@@ -18,7 +18,7 @@ My completed projects at a glance:
 | 1 | [Storage & Buffer Management](lab-writeups/lab_1.md) | The engine moves data between disk and memory, organizes that data within fixed-size pages, and provides an interface for higher-level operators to read and write tuples. | `Buffer Pool`, `Table Heap`  |
 | 2 | [Query Execution](lab-writeups/lab_2.md) | Build the Execution Engine consists of the core data processing logic of a database system. | `Volcano Iterator Model`, `Indexing`, `Access Method`, `Join` |
 | 3 | [Transactions & Concurrency Control](lab-writeups/lab_3.md) | Transform GoDB from a single-threaded query execution engine into a full transactional database system | `Strong Strict Two-Phase Locking`, `Multiple granularity locking`, `Write-ahead Logging`, `Transaction Manager` |
-| 4 | [Logging & Recovery](lab-writeups/lab_4.md) | A durable Write-Ahead Log and the ARIES recovery protocol | `ARIES` |
+| 4 | [Logging & Recovery](lab-writeups/lab_4.md) | A durable Write-Ahead Log and the ARIES recovery protocol | `ARIES`, `Double-Buffer Log Manager`, `Fuzzy Checkpoint` |
 
 # Readings
 
