@@ -8,7 +8,7 @@ See [../GoDB-lab-s26/lab4.md](../GoDB-lab-s26/lab4.md)
 
 * Log Record Checksum: https://drive.google.com/file/d/1NFXn2AqLRECRvQ5tYxpld1UBGA4JtLwO/view
 * Double Buffer Log Manager: https://drive.google.com/file/d/12wnd9qeP2EG3E5sdR9x6fRfZESg8ZZ8V/view
-* Background Dirty Page Flusher:
+* Background Dirty Page Flusher: https://drive.google.com/file/d/1GsXG9RFeXBc97igQxQywtFnU8qrvcqLk/view
 * Checkpoint Manager:
 * Recovery E2E:
 
@@ -100,7 +100,7 @@ I replaced this with `io.ReadFull(reader, data)` to ensure the full record is re
 
 ## Sketches
 
-I have included several of my preliminary sketches to provide insight into my process for mapping out designs and resolving bugs. Please keep in mind that these represent **early-stage** thinking; as such, they may contain **inaccuracies** and may not fully align with the final implementation.
+I have included several of my preliminary sketches to provide insight into my process for mapping out designs and resolving bugs. Please keep in mind that these represent **early-stage** thinking; as such, they may contain **inaccuracies** and may **not fully align** with the final implementation.
 
 ### Double Buffer Log Manager
 
