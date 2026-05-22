@@ -25,14 +25,11 @@ type DoubleBufferLogManager struct {
 	flushedLSN 		atomic.Int64
 	waiterCount 	atomic.Int32
 	closed 				atomic.Bool
-	flushing 			atomic.Bool
 	logPath       string
 	file   				*os.File
 	flushCh       chan struct{}
-	swapCh        chan struct{}
 	ticker        *time.Ticker
 	wg            sync.WaitGroup
-	flushMu       sync.Mutex
 }
 
 func NewDoubleBufferLogManager(logPath string) (*DoubleBufferLogManager, error) {
@@ -55,7 +52,6 @@ func NewDoubleBufferLogManager(logPath string) (*DoubleBufferLogManager, error) 
 		logPath: logPath,
 		file: file,
 		flushCh: make(chan struct{}, 1),
-		swapCh: make(chan struct{}, 1),
 		ticker: time.NewTicker(flushInterval),
 	}
 
