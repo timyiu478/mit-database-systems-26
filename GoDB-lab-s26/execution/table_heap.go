@@ -76,7 +76,8 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 
 	newPageCount := 0
 
-	// Transaction Hook: acquires IX on the table
+	// Transaction Hook:
+	// 1. acquires IX on the table
 	if txn != nil {
 		if err := txn.AcquireLock(tableHeap.tableTag, transaction.LockModeIX); err != nil {
 			return rid, err
@@ -132,9 +133,9 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 		rid.Slot = int32(slot)
 
 		// Transaction Hooks:
-		// 1. acquires X on the newly inserted slot
-		// 2. appends a LogInsert record
-		// 3. advances the LSN of the page
+		// 2. acquires X on the newly inserted slot
+		// 3. appends a LogInsert record
+		var lsn storage.LSN
 		if txn != nil {
 			tag := transaction.NewTupleLockTag(rid)
 			if err := txn.AcquireLock(tag, transaction.LockModeX); err != nil {
@@ -142,18 +143,24 @@ func (tableHeap *TableHeap) InsertTuple(txn *transaction.TransactionContext, row
 				tableHeap.bufferPool.UnpinPage(pageFrame, isInitedHP == false)
 				return rid, err
 			}
-			lsn, err := tableHeap.logManager.Append(txn.NewInsertRecord(rid, row))
+			lsn, err = tableHeap.logManager.Append(txn.NewInsertRecord(rid, row))
 			if err != nil {
 				pageFrame.PageLatch.Unlock()
 				tableHeap.bufferPool.UnpinPage(pageFrame, isInitedHP == false)
 				return rid, err
 			}
-			pageFrame.MonotonicallyUpdateLSN(lsn)
 		}
 
 		heapPage.MarkAllocated(rid, true)
 		tup := heapPage.AccessTuple(rid)
 		copy(tup, row)
+
+		// Transaction Hook:
+		// 4. advances the LSN of the page
+		if txn != nil {
+			pageFrame.MonotonicallyUpdateLSN(lsn)
+		}
+
 		pageFrame.PageLatch.Unlock()
 		tableHeap.bufferPool.UnpinPage(pageFrame, true)
 
@@ -190,20 +197,26 @@ func (tableHeap *TableHeap) DeleteTuple(txn *transaction.TransactionContext, rid
 		return ErrTupleDeleted
 	}
 
-	// Transaction Hooks:
+	// Transaction Hook:
 	// 1. appends a LogDelete record
-	// 2. advances the LSN of the page
+	var lsn storage.LSN
 	if txn != nil {
-		lsn, err := tableHeap.logManager.Append(txn.NewDeleteRecord(rid))
+		lsn, err = tableHeap.logManager.Append(txn.NewDeleteRecord(rid))
 		if err != nil {
 			pageFrame.PageLatch.Unlock()
 			tableHeap.bufferPool.UnpinPage(pageFrame, false)
 			return err
 		}
-		pageFrame.MonotonicallyUpdateLSN(lsn)
 	}
 
 	heapPage.MarkDeleted(rid, true)
+
+	// Transaction Hook:
+	// 2. advances the LSN of the page
+	if txn != nil {
+		pageFrame.MonotonicallyUpdateLSN(lsn)
+	}
+
 	pageFrame.PageLatch.Unlock()
 	tableHeap.bufferPool.UnpinPage(pageFrame, true)
 	return nil
@@ -287,20 +300,26 @@ func (tableHeap *TableHeap) UpdateTuple(txn *transaction.TransactionContext, rid
 
 	tup := heapPage.AccessTuple(rid)
 
-	// Transaction Hooks:
+	// Transaction Hook:
 	// 1. appends a LogUpdate record
-	// 2. advances the LSN of the page
+	var lsn storage.LSN
 	if txn != nil {
-		lsn, err := tableHeap.logManager.Append(txn.NewUpdateRecord(rid, tup, updatedTuple))
+		lsn, err = tableHeap.logManager.Append(txn.NewUpdateRecord(rid, tup, updatedTuple))
 		if err != nil {
 			pageFrame.PageLatch.Unlock()
 			tableHeap.bufferPool.UnpinPage(pageFrame, false)
 			return err
 		}
-		pageFrame.MonotonicallyUpdateLSN(lsn)
 	}
 
 	copy(tup, updatedTuple)
+
+	// Transaction Hook:
+	// 2. advances the LSN of the page
+	if txn != nil {
+		pageFrame.MonotonicallyUpdateLSN(lsn)
+	}
+
 	pageFrame.PageLatch.Unlock()
 	tableHeap.bufferPool.UnpinPage(pageFrame, true)
 	return nil
