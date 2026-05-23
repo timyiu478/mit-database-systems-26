@@ -19,7 +19,7 @@ import (
 // InsertCLR, Delete, DeleteCLR: txnID (8) | RID (12)
 // Update: txnID (8) | RID (12) | AfterImage (?) | BeforeImage (?)
 // UpdateCLR: txnID (8) | RID (12) | AfterImage (?)
-// EndCheckpoint: CheckpointData (?)
+// EndCheckpoint: NumATT (4) | ATT Entries (Variable) | NumDPT (4) | DPT Entries (Variable) |
 type LogRecord struct {
 	data []byte
 }
