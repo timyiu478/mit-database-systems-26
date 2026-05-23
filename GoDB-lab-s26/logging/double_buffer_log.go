@@ -146,7 +146,6 @@ func (lm *DoubleBufferLogManager) FlushedUntil() storage.LSN {
 }
 
 func periodicWALFlusher(lm *DoubleBufferLogManager) {
-
 	for {
 		select {
 		case <- lm.ticker.C:
