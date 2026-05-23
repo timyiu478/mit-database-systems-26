@@ -231,9 +231,19 @@ type ATTEntry struct {
 	StartLSN storage.LSN
 }
 
+// the serialized size of a ATTEntry
+const ATTEntrySize = 16 // common.TransactionID(8 bytes) + storage.LSN(8 bytes)
+
 // GetActiveTransactionsSnapshot returns a snapshot of currently active transaction IDs and their start LSNs.
 //
 // Hint: You do not need to worry about this function until lab 4
 func (tm *TransactionManager) GetActiveTransactionsSnapshot() []ATTEntry {
-	panic("unimplemented")
+	att := make([]ATTEntry, 0, tm.activeTxns.Size())
+
+	tm.activeTxns.Range(func(id common.TransactionID, entry activeTxnEntry) bool {
+		att = append(att, ATTEntry{ID: id, StartLSN: entry.startLsn,})
+		return true
+	})
+
+	return att
 }

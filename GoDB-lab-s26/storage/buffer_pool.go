@@ -252,8 +252,26 @@ func (bp *BufferPool) FlushAllPages() error {
 //
 // Hint: You do not need to worry about this function until lab 4
 func (bp *BufferPool) GetDirtyPageTableSnapshot() map[common.PageID]LSN {
-	// You will not need to implement this until lab4
-	panic("unimplemented")
+	dpt := make(map[common.PageID]LSN)
+
+	for i := uint64(0); i < bp.numShards; i++ {
+		shard := bp.shards[i]
+
+		shard.pages.Range(func(key, value any) bool {
+			el := value.(*list.Element)
+			pf := el.Value.(*PageFrame)
+
+			if pf.isDirty.Load() {
+				pf.PageLatch.RLock()
+				dpt[pf.pageId] = LSN(pf.recLSN.Load())
+				pf.PageLatch.RUnlock()
+			}
+
+			return true // Return true to continue iterating
+		})
+	}
+
+	return dpt
 }
 
 func (bps *BufferPoolShard) getPageFromPool(pageID common.PageID) (*PageFrame) {
