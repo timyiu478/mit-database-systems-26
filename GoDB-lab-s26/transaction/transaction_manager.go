@@ -222,7 +222,11 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 //
 // Hint: You do not need to worry about this function until lab 4
 func (tm *TransactionManager) RestartTransactionForRecovery(txnId common.TransactionID) *TransactionContext {
-	panic("unimplemented")
+	// Allocates a fresh TransactionContext for a survivor, preserving its original TransactionID.
+	txn := tm.txnPool.Get().(*TransactionContext)
+	txn.id = txnId
+
+	return txn
 }
 
 // ATTEntry represents a snapshot of an active transaction for the Active Transaction Table (ATT).
