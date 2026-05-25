@@ -206,8 +206,6 @@ func (rm *RecoveryManager) Recover() error {
 				continue
 			}
 
-			pf, err = rm.bufferPool.GetPage(rid.PageID)
-			if err != nil { return err }
 			isInitedHP := storage.IsInitializedHeapPage(pf)
 			if !isInitedHP {
 				tableHeap, err := rm.tableManager.GetTable(rid.Oid)
