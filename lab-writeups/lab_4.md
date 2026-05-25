@@ -9,12 +9,12 @@ See [../GoDB-lab-s26/lab4.md](../GoDB-lab-s26/lab4.md)
 * Log Record Checksum: https://drive.google.com/file/d/1NFXn2AqLRECRvQ5tYxpld1UBGA4JtLwO/view
 * Double Buffer Log Manager: https://drive.google.com/file/d/12wnd9qeP2EG3E5sdR9x6fRfZESg8ZZ8V/view
 * Background Dirty Page Flusher: https://drive.google.com/file/d/1GsXG9RFeXBc97igQxQywtFnU8qrvcqLk/view
-* Checkpoint Manager:
-* Recovery E2E:
+* Checkpoint Manager: https://drive.google.com/file/d/19w5I-v4jdDb2903qgd4EhO4AVqVrIiIN/view
+* Recovery E2E: https://drive.google.com/file/d/1QLO1Rs9jRsu0nlOWpCgJtx0lyflZRKmt/view
 
 ## Related Source Code
 
-
+https://github.com/timyiu478/mit-database-systems/pull/4/changes
 
 ## Design Choices
 
@@ -95,8 +95,6 @@ However, `Read()` does not guarantee that the entire requested slice will be fil
 
 I replaced this with `io.ReadFull(reader, data)` to ensure the full record is read before attempting to deserialize it.
 
-
-## Key Takeaways
 
 ## Sketches
 
