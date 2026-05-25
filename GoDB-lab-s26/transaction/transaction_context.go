@@ -242,5 +242,16 @@ func (txn *TransactionContext) NewUpdateRecord(rid common.RecordID, before, afte
 //
 // Hint: You do not need to worry about this function until lab 4
 func (txn *TransactionContext) BufferRecordForRecovery(r storage.LogRecord) {
-	panic("unimplemented")
+	t := r.RecordType()
+
+	// Pops the most recent entry
+	if t == storage.LogInsertCLR || t == storage.LogDeleteCLR || t == storage.LogUpdateCLR {
+		common.Assert(txn.logRecords.len() > 0, "Failed to pop a log record from the buffer because the size of log <= 0")
+		txn.logRecords.pop()
+		return
+	}
+
+	// Appends a record to the survivor's undo log
+	buf := txn.logRecords.allocate(r.Size())
+	r.WriteToLog(buf)
 }

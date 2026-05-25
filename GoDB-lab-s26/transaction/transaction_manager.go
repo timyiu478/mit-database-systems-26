@@ -83,6 +83,9 @@ func (tm *TransactionManager) Begin() (*TransactionContext, error) {
 
 // Commit completes a transaction and makes its effects durable and visible.
 func (tm *TransactionManager) Commit(txn *TransactionContext) error {
+	tm.snapshotMu.RLock()
+	defer tm.snapshotMu.RUnlock()
+
 	common.DPrintf(fmt.Sprintf("Committing transaction %d\n", txn.ID()))
 
 	// Execute In-Memory changes (Indexes) after flushed. Think about how this should interleave with the commit logic.
@@ -116,6 +119,9 @@ func (tm *TransactionManager) Commit(txn *TransactionContext) error {
 
 // Abort stops a transaction and ensures its effects are rolled back
 func (tm *TransactionManager) Abort(txn *TransactionContext) error {
+	tm.snapshotMu.RLock()
+	defer tm.snapshotMu.RUnlock()
+
 	common.DPrintf(fmt.Sprintf("Aborting transaction %d\n", txn.ID()))
 
 	// Rollback In-Memory changes (Indexes)
@@ -222,7 +228,18 @@ func (tm *TransactionManager) Abort(txn *TransactionContext) error {
 //
 // Hint: You do not need to worry about this function until lab 4
 func (tm *TransactionManager) RestartTransactionForRecovery(txnId common.TransactionID) *TransactionContext {
-	panic("unimplemented")
+	// Allocates a fresh TransactionContext for a survivor, preserving its original TransactionID.
+	txn := tm.txnPool.Get().(*TransactionContext)
+	txn.id = txnId
+
+	return txn
+}
+
+// This function will be called from Recover() after the analysis phase.
+// to ensure the ID counter is advanced past any ID seen in the WAL
+func (tm *TransactionManager) SetNextTxnId(txnId uint64) {
+	tm.nextTxnID.Store(txnId)
+	tm.nextTxnID.Add(1)
 }
 
 // ATTEntry represents a snapshot of an active transaction for the Active Transaction Table (ATT).
@@ -231,9 +248,22 @@ type ATTEntry struct {
 	StartLSN storage.LSN
 }
 
+// the serialized size of a ATTEntry
+const ATTEntrySize = 16 // common.TransactionID(8 bytes) + storage.LSN(8 bytes)
+
 // GetActiveTransactionsSnapshot returns a snapshot of currently active transaction IDs and their start LSNs.
 //
 // Hint: You do not need to worry about this function until lab 4
 func (tm *TransactionManager) GetActiveTransactionsSnapshot() []ATTEntry {
-	panic("unimplemented")
+	tm.snapshotMu.Lock()
+	defer tm.snapshotMu.Unlock()
+
+	att := make([]ATTEntry, 0, tm.activeTxns.Size())
+
+	tm.activeTxns.Range(func(id common.TransactionID, entry activeTxnEntry) bool {
+		att = append(att, ATTEntry{ID: id, StartLSN: entry.startLsn,})
+		return true
+	})
+
+	return att
 }

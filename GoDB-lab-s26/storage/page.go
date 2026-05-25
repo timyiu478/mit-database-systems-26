@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"math/bits"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,8 @@ type PageFrame struct {
 	refCount atomic.Int64
 	isDirty  atomic.Bool
 	inOld    bool
+	// recovery
+	recLSN   atomic.Int64
 }
 
 // Detect system endianness -- compiler should statically replace this with a constant
@@ -79,6 +82,9 @@ func (frame *PageFrame) MonotonicallyUpdateLSN(lsn LSN) {
 		}
 
 		if atomic.CompareAndSwapUint64(ptr, rawCurrent, rawNew) {
+			if frame.recLSN.CompareAndSwap(0, int64(lsn)) {
+				common.DPrintf(fmt.Sprintf("Recorded the recovery LSN (%d) of page frame %s", int64(lsn), frame.pageId.String()))
+			}
 			return
 		}
 	}

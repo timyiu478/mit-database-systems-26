@@ -21,6 +21,7 @@ import (
 	"mit.edu/dsg/godb/recovery"
 	"mit.edu/dsg/godb/storage"
 	"mit.edu/dsg/godb/transaction"
+	"mit.edu/dsg/godb/logging"
 )
 
 // GoDB is the top-level container for the database system.
@@ -47,8 +48,10 @@ func NewGoDB(catalog *catalog.Catalog, storageDir, logDir string, bufferPoolSize
 		return nil, err
 	}
 
-	// TODO: Replace with your actual log manager implementation from lab 4
-	logManager := &storage.NoopLogManager{}
+	logManager, err := logging.NewDoubleBufferLogManager(filepath.Join(logDir, "wal.log"))
+	if err != nil {
+		return nil, err
+	}
 	bufferPool := storage.NewBufferPool(bufferPoolSize, storage.NewDiskStorageManager(storageDir), logManager)
 	lockManager := transaction.NewLockManager()
 	txnManager := transaction.NewTransactionManager(logManager, bufferPool, lockManager)
@@ -61,10 +64,19 @@ func NewGoDB(catalog *catalog.Catalog, storageDir, logDir string, bufferPoolSize
 		return nil, err
 	}
 
-	// TODO: Use an actual recovery manager once recovery is implemented in lab 4
-	recoveryManager := recovery.NewNoLogRecoveryManager(bufferPool, txnManager, catalog, tableManager, indexManager)
+	recoveryManager := recovery.NewRecoveryManager(logManager, bufferPool, txnManager, logDir, catalog, tableManager, indexManager)
 	if err := recoveryManager.Recover(); err != nil {
 		return nil, err
+	}
+
+	if bgFlusher := recovery.NewBackgroundFlusher(bufferPool, time.Duration(500) * time.Millisecond); bgFlusher != nil {
+		bgFlusher.Start()
+		defer bgFlusher.Stop()
+	}
+
+	if cpManager := recovery.NewCheckpointManager(logManager, bufferPool, txnManager, logDir, time.Duration(2) * time.Second); cpManager != nil {
+		cpManager.Start()
+		defer cpManager.Stop()
 	}
 
 	logicalRules := []planner.LogicalRule{

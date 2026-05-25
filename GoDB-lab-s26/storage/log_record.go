@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 
 	"mit.edu/dsg/godb/common"
 )
@@ -18,7 +19,7 @@ import (
 // InsertCLR, Delete, DeleteCLR: txnID (8) | RID (12)
 // Update: txnID (8) | RID (12) | AfterImage (?) | BeforeImage (?)
 // UpdateCLR: txnID (8) | RID (12) | AfterImage (?)
-// EndCheckpoint: CheckpointData (?)
+// EndCheckpoint: NumATT (4) | ATT Entries (Variable) | NumDPT (4) | DPT Entries (Variable) |
 type LogRecord struct {
 	data []byte
 }
@@ -117,7 +118,7 @@ func (r LogRecord) WriteToLog(buffer []byte) {
 	common.Assert(len(buffer) >= r.Size(), "buffer allocated must be large enough fo the record")
 	copy(buffer, r.data)
 	binary.LittleEndian.PutUint16(buffer[offsetSize:], uint16(r.Size()))
-	// TODO: implement checksum here for lab 4
+	binary.LittleEndian.PutUint32(buffer[offsetChecksum:], crc32.ChecksumIEEE(buffer[offsetType:]))
 }
 
 var ErrCorruptedLogRecord = fmt.Errorf("log record corrupted: checksum mismatch")
@@ -125,7 +126,59 @@ var ErrCorruptedLogRecord = fmt.Errorf("log record corrupted: checksum mismatch"
 // AsVerifiedLogRecord parses a raw byte slice into a LogRecord and verifies its checksum.
 // It returns an ErrCorruptedLogRecord if the data is too short or the checksum does not match.
 func AsVerifiedLogRecord(data []byte) (LogRecord, error) {
-	panic("unimplemented")
+	// Prevent out-of-bounds panic if data is too small to contain a valid header
+	if len(data) < logRecordHeaderSize {
+		return LogRecord{}, ErrCorruptedLogRecord
+	}
+
+	size := binary.LittleEndian.Uint16(data[offsetSize:])
+
+	// Min valid size is 8 - BeginCheckpoint record
+	if size < 8 || size != uint16(len(data)) {
+		return LogRecord{}, ErrCorruptedLogRecord
+	}
+
+	checkSumInRecord := binary.LittleEndian.Uint32(data[offsetChecksum:])
+
+	checkSumActual :=	crc32.ChecksumIEEE(data[offsetType:])
+	
+	// Invalid checksum
+	if checkSumInRecord != checkSumActual {
+		return LogRecord{}, ErrCorruptedLogRecord
+	}
+
+	recordType := LogRecordType(binary.LittleEndian.Uint16(data[offsetType:]))
+
+	switch recordType {
+	case LogBeginTransaction:
+			if size != uint16(BeginTransactionRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogCommit:
+			if size != uint16(CommitRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogAbort:
+			if size != uint16(AbortRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogInsert:
+			if size < uint16(logRecordHeaderSize + 8 + common.RecordIDSize) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogUpdate:
+			minSize := uint16(logRecordHeaderSize + 8 + common.RecordIDSize)
+			if size < minSize { return LogRecord{}, ErrCorruptedLogRecord }
+			// The remaining payload contains both BeforeImage and AfterImage.
+			// Since they are asserted to be identical sizes, the total payload length must be even.
+			if (size-minSize)%2 != 0 { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogDelete:
+			if size != uint16(DeleteRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogBeginCheckpoint:
+			if size != uint16(BeginCheckpointRecordSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogEndCheckpoint:
+			if size < uint16(EndCheckpointRecordSize(0)){ return LogRecord{}, ErrCorruptedLogRecord }
+	case LogInsertCLR:
+			if size != uint16(InsertCLRSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogDeleteCLR:
+			if size != uint16(DeleteCLRSize()) { return LogRecord{}, ErrCorruptedLogRecord }
+	case LogUpdateCLR:
+			if size < uint16(logRecordHeaderSize + 8 + common.RecordIDSize) { return LogRecord{}, ErrCorruptedLogRecord }
+	}
+	
+	return AsLogRecord(data), nil
 }
 
 // AsLogRecord wraps a raw byte slice as a LogRecord without performing verification.
