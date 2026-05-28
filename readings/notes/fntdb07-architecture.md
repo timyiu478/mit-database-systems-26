@@ -49,6 +49,7 @@ Admission Control Policy: does not accept rew work until DBMS has enough resourc
 
 # Section 3: Parallel Architecture: Processes and Memory Coordination
 
+![](assets/arch_of_db_parallel_hw_architecture.png)
 
 ---
 
@@ -101,6 +102,27 @@ Halloween Problem:
 
 ---
 
+# Section 5: Storage Management
+
+Problems of OS File System:
+
+* Double buffering and memory copy from kernel to user (dbms)
+    * fix: mmap
+    * why dbms needs its own buffer? It needs control the page eviction policy (e.g. avoid scan pollution using 2Q)
+
+---
+
+# Section 6: Transactions: Concurrency Control and Recovery
+
+
+
+---
+
+# Section 7: Shared Components
+
+
+---
+
 # Questions
 
 Q. OS threads vs Lightweight thread package
@@ -120,4 +142,4 @@ Q. In the end of section 4.4.1, the author said "In an iterator model, since one
 
 Q. How does iterator model support parrallel query execution?
 
-
+In MIT GoDB 2026, a single query is entirely single-threaded internally. If you call .Next() on a Filter operator, it sequentially calls .Next() on SeqScan on the same thread.
