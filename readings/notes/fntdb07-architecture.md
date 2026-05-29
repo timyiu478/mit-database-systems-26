@@ -114,12 +114,19 @@ Problems of OS File System:
 
 # Section 6: Transactions: Concurrency Control and Recovery
 
+ANSI Isolation Levels:
 
-
----
-
-# Section 7: Shared Components
-
+* Read Uncommitted
+    * How? read without acquiring any lock
+* Read Committed
+    * can read any version of committed data
+    * How?
+        * (1) acquire read lock before read and release it after access.
+        * (2) acquire write lock before write and release it after txn commit/abort.
+* Repeatable read
+    * always read the same version of commited data
+    * How? acquire read/write lock before read/write and release it after txn commit/abort
+* Serializable
 
 ---
 
