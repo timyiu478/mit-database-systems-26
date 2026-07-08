@@ -27,3 +27,4 @@ My paper writeups at a glance:
 1. [Architecture of a Database System](readings/notes/fntdb07-architecture.md)
 1. [Transaction Management in the R* Distributed Database Management Systems](readings/notes/2pc.md)
 1. [Chapter 2. B-Tree Basics in Database Internal by Alex Petrov](readings/notes/b_tree_basic.md)
+1. [Concurrency Control and Recovery by Michael J. Franklin](readings/notes/cc-control-and-reconvery-by-franklin.md)
