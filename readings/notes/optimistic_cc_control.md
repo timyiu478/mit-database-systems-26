@@ -6,15 +6,23 @@ tags: ["Concurrency"]
 # Summary
 
 * This paper presents a optimistic concurrency control method for the systems that the transaction conflicts are unlikely occur.
-* The goal of this method is elimating pessimistic locking.
-* It splits the transaction into three phrase: Read, Validation, and Write.
+* The goal of this method is eliminating pessimistic locking.
+* It splits the transaction into three phrases: Read, Validation, and Write.
 * The purpose of validation is determining whether the transactions respect the serialization of transactions by their assigned timestamps.
 * A serial validation puts timestamp assignment, validation phase, and write phase in to the a critical section.
-
+* Parallel validation allows transactions to concurrently execute validation and write phases.
 
 # Key Takeaways
 
 * The considerations about assigning transaction timestamp
+* Serial validation and parallel validation
+
+# Weaknesses
+
+* Transaction Starvation is possible
+* Memory overhead: local workspace per transaction
+* Like 2PL, it does not solve phantom problem
+* Read-only transaction can be aborted
 
 ---
 
@@ -35,8 +43,8 @@ tags: ["Concurrency"]
 * The validation phase begins when user sends `tend` call to commit the transaction
 * Writes become visible by updating the **pointers/object descriptors** => fast
 * Easy for recovery: NO UNDO
-    * crash during read phase: do nothing because 0 global data was touched
-    * crash during validation phase: just REDO because the entire write set already in WAL
+    * crash during read/validation phase: do nothing because 0 global data was touched
+    * crash during write phase: just REDO because the entire write set already in WAL
 * Validation fails => restart transaction
 
 ## Serial Equivalence
@@ -80,8 +88,15 @@ Ti:  |--- R-------|--- V-----|---- W ----|
 ## Parallel Validation
 
 * transaction begin is same as serial validation
+* critical section: timestamp assignment, maintain active transaction set
+    * the length of the critical section is independent of # of active transactions
+    * leading to Unnecessary abort because the transaction aborts because it conflicts with aborted transaction
+        * abort transaction can't atomically immediately remove it from active transaction set 
+        * why? an aborting transaction cannot instantly and atomically vanish from the active transaction set
+* Why need to consider bothread set and write set when validatingagainst transactions in finish active?
+    * the read phases overlap
 
-TODO
+![](assets/occ_parallel_validation.png)
 
 ---
 
@@ -98,6 +113,8 @@ TODO
 ## Q. Can optimistic concurrency control result in deadlock?
 
 No. It does NOT use lock at read phase. So it is deadlock-free.
+
+But starvation (transaction keeps abort) is possible.
 
 ## Q. When can a system forget the read set of a transaction?
 
@@ -126,6 +143,7 @@ To avoid a slow transaction blocks the garbage collection:
 
 ## Q. When OCC use serial validation, Why for read-only transaction, its validation can be done without critical section?
 
-* No write phrase because it does not modify any global state
+* No write phase because it does not modify any global state
 * No timestamp assignment because it will not overlapping with future transactions
 * It reads from commited transactions only and it validates purely against immutable history (newly committed transaction can't change it).
+* Note that it stills be validated and it can be aborted
