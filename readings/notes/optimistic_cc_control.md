@@ -106,7 +106,7 @@ Ti:  |--- R-------|--- V-----|---- W ----|
 
 * Conflicts between the transactions are rarely occur.
 * When conflicts are rarely occur?
-    * # of nodes in DB >> # of nodes in running transactions
+    * number of nodes in DB >> number of nodes in running transactions
     * probability of modifying congestion node is small
     * most transactions are read-only
 
