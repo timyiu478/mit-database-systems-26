@@ -29,3 +29,6 @@ My paper writeups at a glance:
 1. [Chapter 2. B-Tree Basics in Database Internal by Alex Petrov](readings/notes/b_tree_basic.md)
 1. [Concurrency Control and Recovery by Michael J. Franklin](readings/notes/cc-control-and-reconvery-by-franklin.md)
 1. [Dynamo: Amazon’s Highly Available Key-value Store](readings/notes/dynamo.md)
+1. [On Optimistic Methods for Concurrency Control](readings/notes/optimistic_cc_control.md)
+
+
