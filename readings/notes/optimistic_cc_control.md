@@ -24,6 +24,10 @@ tags: ["Concurrency"]
 * Like 2PL, it does not solve phantom problem
 * Read-only transaction can be aborted
 
+# Implementation
+
+https://github.com/timyiu478/occ
+
 ---
 
 # Details
